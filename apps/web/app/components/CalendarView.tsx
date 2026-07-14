@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   api, AttendanceStatus, AuthResult, Calendar, CalendarEvent, EventInput, EventOccurrence,
-  EventRecurrence, Space, SpaceMember,
+  EventRecurrence, EventResource, EventResourceReference, EventResourceType, Space, SpaceMember,
 } from "../lib/api";
 import styles from "./CouponWithApp.module.css";
 
@@ -15,6 +15,9 @@ const recurrenceLabels: Record<EventRecurrence, string> = {
 const attendanceLabels: Record<AttendanceStatus, string> = {
   PENDING: "응답 대기", ACCEPTED: "참석", DECLINED: "불참", MAYBE: "미정",
 };
+const resourceLabels: Record<EventResourceType, string> = { POST: "공유글", ATTACHMENT: "첨부파일", COUPON: "쿠폰" };
+const couponStatusLabels = { AVAILABLE: "사용 가능", CLAIMED: "선점", USED: "사용 완료", EXPIRED: "만료" } as const;
+function resourceKey(item: Pick<EventResource, "type" | "resourceId">) { return `${item.type}:${item.resourceId}`; }
 
 function startOfDay(value: Date) { const result = new Date(value); result.setHours(0, 0, 0, 0); return result; }
 function addDays(value: Date, amount: number) { const result = new Date(value); result.setDate(result.getDate() + amount); return result; }
@@ -64,6 +67,8 @@ export function CalendarView({ spaces, session, demo }: {
   const [editorOpen, setEditorOpen] = useState(false);
   const [calendarCreatorOpen, setCalendarCreatorOpen] = useState(false);
   const [editing, setEditing] = useState<CalendarEvent | null>(null);
+  const [resourceOptions, setResourceOptions] = useState<EventResource[]>([]);
+  const [linkedResources, setLinkedResources] = useState<EventResource[]>([]);
   const [draftDay, setDraftDay] = useState(() => new Date());
   const [reloadKey, setReloadKey] = useState(0);
   const range = useMemo(() => rangeFor(mode, cursor), [mode, cursor]);
@@ -91,17 +96,23 @@ export function CalendarView({ spaces, session, demo }: {
             { userId: "demo-owner", displayName: "김모아", email: "owner@moaday.test", role: "OWNER", joinedAt: new Date().toISOString(), currentUser: true },
             ...(selectedSpaceType === "PERSONAL" ? [] : [{ userId: "demo-member", displayName: "이하루", email: "member@moaday.test", role: "MEMBER" as const, joinedAt: new Date().toISOString(), currentUser: false }]),
           ]);
+          setResourceOptions([
+            { type: "POST", resourceId: "demo-post", title: "저녁 메뉴 후보", subtitle: "공유글" },
+            { type: "ATTACHMENT", resourceId: "demo-file", title: "장보기 목록.pdf", subtitle: "저녁 메뉴 후보", contentType: "application/pdf", sizeBytes: 245760 },
+            { type: "COUPON", resourceId: "demo-coupon", title: "패밀리 레스토랑 1만원권", subtitle: "Moa Dining", status: "AVAILABLE", expiresAt: addDays(new Date(), 14).toISOString() },
+          ]);
           setEvents((current) => current.length > 0 ? current : [{ occurrenceId: "demo-event", eventId: "demo-event", calendarId: demoCalendar.id, calendarName: demoCalendar.name,
             calendarColor: demoCalendar.color, spaceId: selectedSpaceId, title: "함께 저녁 먹기", description: "이번 주 메뉴 정하기",
             location: "우리 동네", allDay: false, startsAt: first.start.toISOString(), endsAt: first.end.toISOString(), recurrence: "NONE",
             attendees: [], reminderMinutes: [30], canEdit: true }]);
         } else if (token) {
-          const [loadedCalendars, loadedMembers, loadedEvents] = await Promise.all([
+          const [loadedCalendars, loadedMembers, loadedEvents, loadedResources] = await Promise.all([
             api.listCalendars(token, selectedSpaceId), api.listMembers(token, selectedSpaceId),
             api.listEvents(token, selectedSpaceId, rangeFrom, rangeTo),
+            api.listLinkableResources(token, selectedSpaceId),
           ]);
           if (!active) return;
-          setCalendars(loadedCalendars); setMembers(loadedMembers); setEvents(loadedEvents);
+          setCalendars(loadedCalendars); setMembers(loadedMembers); setEvents(loadedEvents); setResourceOptions(loadedResources);
         }
       } catch (reason) { if (active) setError(reason instanceof Error ? reason.message : "캘린더를 불러오지 못했습니다."); }
       finally { if (active) setLoading(false); }
@@ -117,13 +128,20 @@ export function CalendarView({ spaces, session, demo }: {
     setCursor(next);
   }
 
-  function openNew(day: Date) { setEditing(null); setDraftDay(day); setEditorOpen(true); setError(""); }
+  function openNew(day: Date) { setEditing(null); setLinkedResources([]); setDraftDay(day); setEditorOpen(true); setError(""); }
 
   async function openExisting(occurrence: EventOccurrence) {
     try {
       if (demo) {
         setEditing({ ...occurrence, id: occurrence.eventId, externalUrl: undefined, timezone: "Asia/Seoul", createdBy: "demo-owner", version: 0 });
-      } else setEditing(await api.getEvent(session!.accessToken, occurrence.eventId));
+        setLinkedResources(resourceOptions.slice(0, 2));
+      } else {
+        const [loadedEvent, loadedResources] = await Promise.all([
+          api.getEvent(session!.accessToken, occurrence.eventId),
+          api.listEventResources(session!.accessToken, occurrence.eventId),
+        ]);
+        setEditing(loadedEvent); setLinkedResources(loadedResources);
+      }
       setEditorOpen(true); setError("");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "일정을 열지 못했습니다."); }
   }
@@ -142,6 +160,10 @@ export function CalendarView({ spaces, session, demo }: {
       attendeeUserIds: form.getAll("attendeeUserIds").map(String),
       reminderMinutes: form.get("reminderMinutes") === "" ? [] : [Number(form.get("reminderMinutes"))],
     };
+    const resources = form.getAll("resourceKeys").map(String).map((value): EventResourceReference => {
+      const [type, resourceId] = value.split(":");
+      return { type: type as EventResourceType, resourceId };
+    });
     try {
       if (demo) {
         const eventId = editing?.id ?? crypto.randomUUID();
@@ -151,8 +173,13 @@ export function CalendarView({ spaces, session, demo }: {
           allDay: input.allDay, startsAt: input.startsAt, endsAt: input.endsAt, recurrence: input.recurrence,
           recurrenceUntil: input.recurrenceUntil ?? undefined, attendees: [], reminderMinutes: input.reminderMinutes, canEdit: true };
         setEvents((current) => [...current.filter((item) => item.eventId !== eventId), occurrence]);
-      } else if (editing) await api.updateEvent(session!.accessToken, editing.id, input);
-      else await api.createEvent(session!.accessToken, input.calendarId!, input);
+        setLinkedResources(resourceOptions.filter((item) => resources.some((reference) => resourceKey(reference) === resourceKey(item))));
+      } else {
+        const saved = editing ? await api.updateEvent(session!.accessToken, editing.id, input)
+          : await api.createEvent(session!.accessToken, input.calendarId!, input);
+        if (!editing) setEditing(saved);
+        await api.replaceEventResources(session!.accessToken, saved.id, resources);
+      }
       setEditorOpen(false); setEditing(null); if (!demo) setReloadKey((value) => value + 1);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "일정을 저장하지 못했습니다."); }
   }
@@ -173,6 +200,14 @@ export function CalendarView({ spaces, session, demo }: {
       else setEditing({ ...editing, attendees: editing.attendees.map((item) => item.currentUser ? { ...item, response } : item) });
       if (!demo) setReloadKey((value) => value + 1);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "참석 응답을 저장하지 못했습니다."); }
+  }
+
+  async function downloadResource(item: EventResource) {
+    if (demo || !token || item.type !== "ATTACHMENT") return;
+    try {
+      await api.downloadAttachment(token, { id: item.resourceId, originalName: item.title,
+        contentType: item.contentType ?? "application/octet-stream", sizeBytes: item.sizeBytes ?? 0 });
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "첨부파일을 내려받지 못했습니다."); }
   }
 
   async function addCalendar(event: FormEvent<HTMLFormElement>) {
@@ -241,7 +276,8 @@ export function CalendarView({ spaces, session, demo }: {
       </div>}
 
       {editorOpen && <EventEditor event={editing} day={draftDay} calendars={calendars} members={members} canCreate={selectedSpace.role !== "VIEWER"}
-        onClose={() => { setEditorOpen(false); setEditing(null); }} onSubmit={saveEvent} onDelete={removeEvent} onRespond={respond} />}
+        resources={resourceOptions} linkedResources={linkedResources}
+        onClose={() => { setEditorOpen(false); setEditing(null); setLinkedResources([]); }} onSubmit={saveEvent} onDelete={removeEvent} onRespond={respond} onDownload={downloadResource} />}
       {calendarCreatorOpen && <CalendarCreator onClose={() => setCalendarCreatorOpen(false)} onSubmit={addCalendar} />}
     </section>
   );
@@ -267,10 +303,12 @@ function EventList({ items, onOpen, compact = false }: { items: EventOccurrence[
   </button>)}</div>;
 }
 
-function EventEditor({ event, day, calendars, members, canCreate, onClose, onSubmit, onDelete, onRespond }: {
+function EventEditor({ event, day, calendars, members, canCreate, resources, linkedResources, onClose, onSubmit, onDelete, onRespond, onDownload }: {
   event: CalendarEvent | null; day: Date; calendars: Calendar[]; members: SpaceMember[]; canCreate: boolean;
+  resources: EventResource[]; linkedResources: EventResource[];
   onClose: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onDelete: () => void;
   onRespond: (response: Exclude<AttendanceStatus, "PENDING">) => void;
+  onDownload: (item: EventResource) => void;
 }) {
   const times = newEventTimes(day);
   const currentResponse = event?.attendees.find((attendee) => attendee.currentUser)?.response;
@@ -291,7 +329,41 @@ function EventEditor({ event, day, calendars, members, canCreate, onClose, onSub
       <div className={styles.formColumns}><label>반복<select name="recurrence" defaultValue={event?.recurrence ?? "NONE"} disabled={!canEdit}>{Object.entries(recurrenceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>반복 종료일<input type="date" name="recurrenceUntil" defaultValue={recurrenceUntil} disabled={!canEdit} /></label></div>
       <label>알림<select name="reminderMinutes" defaultValue={event?.reminderMinutes[0] ?? 30} disabled={!canEdit}><option value="">알림 없음</option><option value="0">시작할 때</option><option value="10">10분 전</option><option value="30">30분 전</option><option value="60">1시간 전</option><option value="1440">1일 전</option></select></label>
       <fieldset className={styles.attendeeField} disabled={!canEdit}><legend>참석자</legend>{members.map((member) => <label key={member.userId}><input type="checkbox" name="attendeeUserIds" value={member.userId} defaultChecked={event?.attendees.some((attendee) => attendee.userId === member.userId) ?? member.currentUser} /> <span>{member.displayName}<small>{member.email}</small></span>{event?.attendees.find((attendee) => attendee.userId === member.userId) && <em>{attendanceLabels[event.attendees.find((attendee) => attendee.userId === member.userId)!.response]}</em>}</label>)}</fieldset>
+      <fieldset className={styles.resourceField} disabled={!canEdit}>
+        <legend>연결 자료 <small>공유글·첨부파일·쿠폰</small></legend>
+        {resources.length === 0 && <p>이 공간에 연결할 자료가 아직 없습니다.</p>}
+        {resources.map((item) => <label key={resourceKey(item)}>
+          <input type="checkbox" name="resourceKeys" value={resourceKey(item)} defaultChecked={linkedResources.some((linked) => resourceKey(linked) === resourceKey(item))} />
+          <span><b>{resourceLabels[item.type]}</b><strong>{item.title}</strong><small>{resourceDescription(item)}</small></span>
+        </label>)}
+      </fieldset>
+      {event && linkedResources.length > 0 && <section className={styles.linkedResourcePanel} aria-label="일정 연결 자료">
+        <h3>함께 볼 자료</h3>
+        <div>{linkedResources.map((item) => <article key={resourceKey(item)}>
+          <span>{resourceLabels[item.type]}</span><strong>{item.title}</strong><small>{resourceDescription(item)}</small>
+          {item.type === "ATTACHMENT" && <button type="button" onClick={() => onDownload(item)}>파일 받기</button>}
+        </article>)}</div>
+      </section>}
       {canEdit && <div className={styles.editorActions}>{event && <button className={styles.dangerOutlineButton} type="button" onClick={onDelete}>삭제</button>}<button className={styles.primaryButtonLarge}>{event ? "변경 저장" : "일정 만들기"}</button></div>}
     </form>
   </div></div>;
+}
+
+function resourceDescription(item: EventResource) {
+  if (item.type === "COUPON") {
+    const status = item.status ? couponStatusLabels[item.status] : "";
+    const expiry = item.expiresAt ? ` · ${new Date(item.expiresAt).toLocaleDateString("ko-KR")}까지` : "";
+    return `${item.subtitle} · ${status}${expiry}`;
+  }
+  if (item.type === "ATTACHMENT") {
+    const size = item.sizeBytes == null ? "" : ` · ${formatBytes(item.sizeBytes)}`;
+    return `${item.subtitle}${size}`;
+  }
+  return item.subtitle;
+}
+
+function formatBytes(value: number) {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }

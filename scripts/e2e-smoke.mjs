@@ -58,6 +58,18 @@ try {
     const visible = await request(`/spaces/${space.id}/posts?query=${suffix}`, { token: viewer.accessToken });
     await request(`/spaces/${space.id}/posts`, { token: viewer.accessToken, method: "POST", body: { title: "차단", content: "차단", tags: [] }, expected: 403 });
     const coupon = await request(`/spaces/${space.id}/coupons`, { token: owner.accessToken, method: "POST", body: { title: `E2E 쿠폰 ${suffix}`, brand: "Moa Cafe", description: "점검", expiresAt: new Date(Date.now() + 86400000).toISOString(), barcodeValue: "8801234567893", barcodeFormat: "EAN13" } });
+    const calendars = await request(`/spaces/${space.id}/calendars`, { token: owner.accessToken });
+    const startsAt = new Date(Date.now() + 7200000);
+    const event = await request(`/calendars/${calendars[0].id}/events`, { token: owner.accessToken, method: "POST", body: {
+        title: `E2E 일정 ${suffix}`, description: "연결 자료 점검", location: "Moa Lab", allDay: false,
+        startsAt: startsAt.toISOString(), endsAt: new Date(startsAt.getTime() + 3600000).toISOString(), timezone: "Asia/Seoul",
+        recurrence: "NONE", recurrenceUntil: null, attendeeUserIds: [member.user.id, viewer.user.id], reminderMinutes: [30],
+    } });
+    const linked = await request(`/events/${event.id}/resources`, { token: owner.accessToken, method: "PUT", body: { resources: [
+        { type: "POST", resourceId: post.post.id }, { type: "COUPON", resourceId: coupon.id },
+    ] } });
+    const visibleLinks = await request(`/events/${event.id}/resources`, { token: viewer.accessToken });
+    const linkable = await request(`/spaces/${space.id}/linkable-resources`, { token: member.accessToken });
     await request(`/coupons/${coupon.id}/claim`, { token: member.accessToken, method: "POST" });
     const barcode = await request(`/coupons/${coupon.id}/barcode`, { token: member.accessToken });
     const search = await request(`/search?query=${suffix}`, { token: owner.accessToken });
@@ -71,7 +83,7 @@ try {
     const viewerSpaces = await request("/spaces", { token: viewer.accessToken });
     await request(`/spaces/${space.id}`, { token: owner.accessToken, method: "DELETE", expected: 204 });
     const memberSpaces = await request("/spaces", { token: member.accessToken });
-    const checks = { postVisible: visible.some(item => item.id === post.post.id), viewerBlocked: true, barcodeProtected: barcode.value === "8801234567893", couponUsed: used.status === "USED", couponHistory: couponHistory.some(item => item.action === "COUPON_REVEALED") && couponHistory.some(item => item.action === "COUPON_USED"), auditLog: auditLogs.some(item => item.action === "COUPON_REVEALED"), integratedSearch: searchTypes.has("POST") && searchTypes.has("COUPON"), dashboard: dashboard.recentPosts.some(item => item.id === post.post.id) && dashboard.expiringCoupons.some(item => item.id === coupon.id), memberLeft: !viewerSpaces.some(item => item.id === space.id), spaceArchived: !memberSpaces.some(item => item.id === space.id) };
+    const checks = { postVisible: visible.some(item => item.id === post.post.id), viewerBlocked: true, barcodeProtected: barcode.value === "8801234567893", couponUsed: used.status === "USED", couponHistory: couponHistory.some(item => item.action === "COUPON_REVEALED") && couponHistory.some(item => item.action === "COUPON_USED"), auditLog: auditLogs.some(item => item.action === "COUPON_REVEALED"), integratedSearch: searchTypes.has("EVENT") && searchTypes.has("POST") && searchTypes.has("COUPON"), dashboard: dashboard.recentPosts.some(item => item.id === post.post.id) && dashboard.expiringCoupons.some(item => item.id === coupon.id), eventResources: linked.length === 2 && visibleLinks.length === 2 && visibleLinks.every(item => !("barcodeValue" in item)), linkableResources: linkable.some(item => item.resourceId === post.post.id) && linkable.some(item => item.resourceId === coupon.id), memberLeft: !viewerSpaces.some(item => item.id === space.id), spaceArchived: !memberSpaces.some(item => item.id === space.id) };
     if (Object.values(checks).some(value => !value)) throw new Error(`E2E 점검 실패: ${JSON.stringify(checks)}`);
     console.log(`MoaDay E2E 점검 통과 (${Object.keys(checks).length}개 핵심 흐름)`);
 } finally {

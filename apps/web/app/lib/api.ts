@@ -23,6 +23,12 @@ export type EventInput = {
   allDay: boolean; startsAt: string; endsAt: string; timezone: string; recurrence: EventRecurrence;
   recurrenceUntil?: string | null; attendeeUserIds: string[]; reminderMinutes: number[];
 };
+export type EventResourceType = "POST" | "ATTACHMENT" | "COUPON";
+export type EventResource = {
+  type: EventResourceType; resourceId: string; title: string; subtitle: string;
+  status?: CouponStatus; expiresAt?: string; postId?: string; contentType?: string; sizeBytes?: number;
+};
+export type EventResourceReference = { type: EventResourceType; resourceId: string };
 export type PostAttachment = { id: string; originalName: string; contentType: string; sizeBytes: number };
 export type PostComment = { id: string; authorId: string; authorName: string; content: string; createdAt: string; updatedAt: string; canEdit: boolean };
 export type SharedPost = { id: string; spaceId: string; title: string; content: string; pinned: boolean; authorId: string; authorName: string; tags: string[]; attachments: PostAttachment[]; commentCount: number; createdAt: string; updatedAt: string; canEdit: boolean };
@@ -81,6 +87,9 @@ export const api = {
   updateEvent: (token: string, eventId: string, input: EventInput) => request<CalendarEvent>(`/events/${eventId}`, { method: "PATCH", body: JSON.stringify(input) }, token),
   deleteEvent: (token: string, eventId: string) => request<void>(`/events/${eventId}`, { method: "DELETE" }, token),
   respondAttendance: (token: string, eventId: string, response: Exclude<AttendanceStatus, "PENDING">) => request<CalendarEvent>(`/events/${eventId}/attendance`, { method: "POST", body: JSON.stringify({ response }) }, token),
+  listLinkableResources: (token: string, spaceId: string) => request<EventResource[]>(`/spaces/${spaceId}/linkable-resources`, {}, token),
+  listEventResources: (token: string, eventId: string) => request<EventResource[]>(`/events/${eventId}/resources`, {}, token),
+  replaceEventResources: (token: string, eventId: string, resources: EventResourceReference[]) => request<EventResource[]>(`/events/${eventId}/resources`, { method: "PUT", body: JSON.stringify({ resources }) }, token),
   listPosts: (token: string, spaceId: string, query = "", tag = "", pinned = false) => request<SharedPost[]>(`/spaces/${spaceId}/posts?query=${encodeURIComponent(query)}&tag=${encodeURIComponent(tag)}&pinned=${pinned}`, {}, token),
   getPost: (token: string, postId: string) => request<PostDetail>(`/posts/${postId}`, {}, token),
   createPost: (token: string, spaceId: string, input: { title: string; content: string; tags: string[] }) => request<PostDetail>(`/spaces/${spaceId}/posts`, { method: "POST", body: JSON.stringify(input) }, token),

@@ -54,6 +54,9 @@ test("removes starter preview code and ships product metadata", async () => {
   assert.match(calendar, /반복 일정 전체 편집/);
   assert.match(calendar, /참석자/);
   assert.match(calendar, /알림/);
+  assert.match(calendar, /연결 자료/);
+  assert.match(calendar, /공유글·첨부파일·쿠폰/);
+  assert.match(calendar, /파일 받기/);
   assert.match(shared, /새 글/);
   assert.match(shared, /첨부파일/);
   assert.match(shared, /ImageAttachment/);
