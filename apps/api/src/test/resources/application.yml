@@ -1,0 +1,28 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:couponwith-test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+  mail:
+    host: localhost
+    port: 1025
+
+couponwith:
+  jwt:
+    secret: test-secret-must-be-at-least-thirty-two-bytes-long-for-hs256
+  cors:
+    allowed-origins: http://localhost:3000
+
+moaday:
+  storage:
+    path: ./target/test-uploads
+  automation:
+    initial-delay-ms: 3600000
+    interval-ms: 3600000
+    reminder-lookback-minutes: 10

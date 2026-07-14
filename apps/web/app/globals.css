@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+:root {
+  --ink: #17211b;
+  --muted: #66736b;
+  --paper: #f7f5ef;
+  --surface: #fffdf8;
+  --line: #deddd4;
+  --leaf: #1f6b49;
+  --leaf-dark: #155239;
+  --leaf-soft: #dcecdf;
+  --sun: #ef9f39;
+  --sun-soft: #fff0d7;
+  --sky: #4f7f95;
+  --danger: #b54735;
+  --shadow: 0 16px 44px rgba(35, 50, 40, 0.09);
+}
+
+* { box-sizing: border-box; }
+html { color-scheme: light; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: Pretendard, "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+}
+button, input, select { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .55; }
+:focus-visible { outline: 3px solid rgba(31, 107, 73, .28); outline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

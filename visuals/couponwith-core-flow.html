@@ -1,0 +1,393 @@
+<div id="couponwith-wireframe">
+  <div class="cw-layout">
+    <aside class="cw-sidebar" aria-label="주요 화면">
+      <div class="cw-brand">
+        <span class="cw-mark" aria-hidden="true"><i data-lucide="calendar-check"></i></span>
+        <span>MoaDay</span>
+      </div>
+      <div class="cw-space-row">
+        <span class="cw-space-dot" aria-hidden="true"></span>
+        <span>우리 가족</span>
+        <button type="button" class="btn btn-ghost cw-icon-button" aria-label="공간 전환"><i data-lucide="chevrons-up-down" aria-hidden="true"></i></button>
+      </div>
+      <nav class="cw-nav" aria-label="화면 선택">
+        <button type="button" class="btn btn-ghost cw-nav-button" data-screen="today" aria-pressed="true"><i data-lucide="house" aria-hidden="true"></i><span>오늘</span></button>
+        <button type="button" class="btn btn-ghost cw-nav-button" data-screen="calendar" aria-pressed="false"><i data-lucide="calendar-days" aria-hidden="true"></i><span>캘린더</span></button>
+        <button type="button" class="btn btn-ghost cw-nav-button" data-screen="posts" aria-pressed="false"><i data-lucide="files" aria-hidden="true"></i><span>공유함</span></button>
+        <button type="button" class="btn btn-ghost cw-nav-button" data-screen="coupons" aria-pressed="false"><i data-lucide="ticket-check" aria-hidden="true"></i><span>쿠폰함</span></button>
+        <button type="button" class="btn btn-ghost cw-nav-button" data-screen="members" aria-pressed="false"><i data-lucide="users" aria-hidden="true"></i><span>구성원</span></button>
+      </nav>
+      <div class="cw-sidebar-end">
+        <button type="button" class="btn btn-ghost cw-nav-button" data-screen="settings" aria-pressed="false"><i data-lucide="settings" aria-hidden="true"></i><span>설정</span></button>
+      </div>
+    </aside>
+
+    <main class="cw-main">
+      <header class="cw-topbar">
+        <div>
+          <div class="text-small text-muted" id="cw-eyebrow">2026년 7월 13일 월요일</div>
+          <h2 id="cw-title">오늘</h2>
+        </div>
+        <div class="viz-row">
+          <button type="button" class="btn btn-ghost" aria-label="검색"><i data-lucide="search" aria-hidden="true"></i><span class="cw-wide-label">검색</span></button>
+          <button type="button" class="btn btn-ghost" aria-label="알림"><i data-lucide="bell" aria-hidden="true"></i><span class="cw-wide-label">알림 3</span></button>
+          <button type="button" class="btn btn-primary" id="cw-primary"><i data-lucide="plus" aria-hidden="true"></i><span>일정 추가</span></button>
+        </div>
+      </header>
+
+      <section class="card cw-screen" id="cw-screen" aria-live="polite"></section>
+
+      <nav class="cw-bottom-nav" aria-label="모바일 주요 화면">
+        <button type="button" class="btn btn-ghost cw-bottom-button" data-screen="today" aria-pressed="true"><i data-lucide="house" aria-hidden="true"></i><span>오늘</span></button>
+        <button type="button" class="btn btn-ghost cw-bottom-button" data-screen="calendar" aria-pressed="false"><i data-lucide="calendar-days" aria-hidden="true"></i><span>캘린더</span></button>
+        <button type="button" class="btn btn-ghost cw-bottom-button" data-screen="posts" aria-pressed="false"><i data-lucide="files" aria-hidden="true"></i><span>공유함</span></button>
+        <button type="button" class="btn btn-ghost cw-bottom-button" data-screen="coupons" aria-pressed="false"><i data-lucide="ticket-check" aria-hidden="true"></i><span>쿠폰함</span></button>
+      </nav>
+    </main>
+  </div>
+</div>
+
+<style>
+  #couponwith-wireframe {
+    color: var(--foreground);
+    background: transparent;
+  }
+  #couponwith-wireframe * { box-sizing: border-box; }
+  #couponwith-wireframe h2,
+  #couponwith-wireframe h3,
+  #couponwith-wireframe p { margin-top: 0; }
+  #couponwith-wireframe h2 { margin-bottom: 0; }
+  #couponwith-wireframe h3 { margin-bottom: .35rem; }
+  #couponwith-wireframe p { margin-bottom: .25rem; }
+  .cw-layout {
+    display: grid;
+    grid-template-columns: 11rem minmax(0, 1fr);
+    min-height: 34rem;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .cw-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: .75rem;
+    padding: 1rem .75rem;
+    border-right: 1px solid var(--border);
+  }
+  .cw-brand {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    font-weight: 500;
+    padding: 0 .5rem;
+  }
+  .cw-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+  .cw-space-row {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    padding: .5rem;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .cw-space-dot {
+    width: .6rem;
+    height: .6rem;
+    border-radius: 50%;
+    background: var(--viz-series-2);
+  }
+  .cw-space-row > span:nth-child(2) { flex: 1; }
+  .cw-icon-button { padding-inline: .35rem; }
+  .cw-nav { display: grid; gap: .25rem; }
+  .cw-nav-button {
+    justify-content: flex-start;
+    width: 100%;
+  }
+  .cw-sidebar-end { margin-top: auto; }
+  .cw-main {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 1rem;
+  }
+  .cw-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  .cw-screen {
+    flex: 1;
+    padding: 1rem;
+  }
+  .cw-section-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: .75rem;
+    margin-bottom: .5rem;
+  }
+  .cw-list { display: grid; }
+  .cw-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: .75rem;
+    min-height: 3.6rem;
+    padding: .65rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .cw-row:last-child { border-bottom: 0; }
+  .cw-time {
+    min-width: 3.5rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .cw-line {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    flex-wrap: wrap;
+  }
+  .cw-dot {
+    width: .55rem;
+    height: .55rem;
+    border-radius: 50%;
+    background: var(--viz-series-1);
+  }
+  .cw-dot.family { background: var(--viz-series-2); }
+  .cw-dot.friend { background: var(--viz-series-3); }
+  .cw-expiry {
+    font-variant-numeric: tabular-nums;
+    color: var(--muted-foreground);
+  }
+  .cw-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(14rem, .65fr);
+    gap: 1rem;
+  }
+  .cw-column + .cw-column {
+    border-left: 1px solid var(--border);
+    padding-left: 1rem;
+  }
+  .cw-week {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    border-top: 1px solid var(--border);
+    border-left: 1px solid var(--border);
+  }
+  .cw-day {
+    min-height: 5.4rem;
+    padding: .45rem;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .cw-day.is-selected { background: color-mix(in srgb, var(--primary) 10%, transparent); }
+  .cw-day-num { display: block; margin-bottom: .35rem; }
+  .cw-event-chip {
+    display: block;
+    padding: .2rem .3rem;
+    margin-bottom: .2rem;
+    border-left: 3px solid var(--viz-series-2);
+    background: color-mix(in srgb, var(--viz-series-2) 12%, transparent);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cw-event-chip.friend {
+    border-left-color: var(--viz-series-3);
+    background: color-mix(in srgb, var(--viz-series-3) 12%, transparent);
+  }
+  .cw-filter-row {
+    display: flex;
+    gap: .5rem;
+    flex-wrap: wrap;
+    margin-bottom: .75rem;
+  }
+  .cw-coupon-status {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+  }
+  .cw-countdown {
+    font-variant-numeric: tabular-nums;
+    color: var(--foreground);
+  }
+  .cw-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    background: var(--secondary);
+    color: var(--secondary-foreground);
+  }
+  .cw-bottom-nav { display: none; }
+  @media (max-width: 640px) {
+    .cw-layout { display: block; min-height: 38rem; }
+    .cw-sidebar { display: none; }
+    .cw-main { padding: .75rem .5rem 4.25rem; min-height: 38rem; }
+    .cw-topbar { align-items: flex-start; }
+    .cw-topbar .viz-row { gap: .25rem; }
+    .cw-wide-label { display: none; }
+    .cw-screen { padding: .75rem; }
+    .cw-columns { display: block; }
+    .cw-column + .cw-column { border-left: 0; border-top: 1px solid var(--border); padding: .75rem 0 0; margin-top: .75rem; }
+    .cw-row { grid-template-columns: auto minmax(0, 1fr); }
+    .cw-row > :last-child { grid-column: 2; justify-self: start; }
+    .cw-week { grid-template-columns: repeat(7, minmax(2.35rem, 1fr)); font-size: .78em; }
+    .cw-day { min-height: 4.2rem; padding: .25rem; }
+    .cw-event-chip { padding-inline: .15rem; }
+    .cw-bottom-nav {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      position: absolute;
+      left: .5rem;
+      right: .5rem;
+      bottom: .5rem;
+      padding-top: .4rem;
+      border-top: 1px solid var(--border);
+      background: var(--background);
+    }
+    .cw-main { position: relative; }
+    .cw-bottom-button { display: grid; justify-items: center; gap: .15rem; padding-inline: .25rem; }
+    .cw-bottom-button span { font-size: .75em; }
+  }
+</style>
+
+<script>
+(() => {
+  const root = document.getElementById('couponwith-wireframe');
+  const title = root.querySelector('#cw-title');
+  const eyebrow = root.querySelector('#cw-eyebrow');
+  const screen = root.querySelector('#cw-screen');
+  const primary = root.querySelector('#cw-primary');
+
+  const screens = {
+    today: {
+      title: '오늘',
+      eyebrow: '2026년 7월 13일 월요일',
+      action: '일정 추가',
+      icon: 'plus',
+      html: `
+        <div class="cw-columns">
+          <div class="cw-column">
+            <div class="cw-section-head"><div><h3>다가오는 일정</h3><p class="text-small text-muted">개인 및 그룹 일정 3개</p></div><button class="btn btn-ghost" type="button">전체 보기</button></div>
+            <div class="cw-list">
+              <div class="cw-row"><div class="cw-time">10:00</div><div><div class="cw-line"><span class="cw-dot family"></span><span>엄마 병원 진료</span></div><div class="text-small text-muted">우리 가족 · 서울병원</div></div><span class="viz-badge">참석</span></div>
+              <div class="cw-row"><div class="cw-time">18:30</div><div><div class="cw-line"><span class="cw-dot friend"></span><span>친구들과 저녁</span></div><div class="text-small text-muted">고등학교 친구들 · 4명</div></div><span class="viz-badge">미정</span></div>
+              <div class="cw-row"><div class="cw-time">종일</div><div><div class="cw-line"><span class="cw-dot"></span><span>보험 서류 제출</span></div><div class="text-small text-muted">개인 · 제목만 공유</div></div><span class="text-small text-muted">내일</span></div>
+            </div>
+          </div>
+          <div class="cw-column">
+            <div class="cw-section-head"><div><h3>만료 임박 쿠폰</h3><p class="text-small text-muted">7일 안에 만료 2개</p></div></div>
+            <div class="cw-list">
+              <div class="cw-row"><i data-lucide="coffee" aria-hidden="true"></i><div><div>카페 아메리카노</div><div class="text-small text-muted">우리 가족 · 사용 가능</div></div><span class="cw-expiry">D-2</span></div>
+              <div class="cw-row"><i data-lucide="cake-slice" aria-hidden="true"></i><div><div>조각 케이크</div><div class="text-small text-muted">고등학교 친구들 · 사용 가능</div></div><span class="cw-expiry">D-6</span></div>
+            </div>
+            <div class="cw-section-head"><div><h3>최근 공유글</h3></div></div>
+            <div class="cw-list"><div class="cw-row"><i data-lucide="pin" aria-hidden="true"></i><div><div>여름휴가 준비물</div><div class="text-small text-muted">댓글 3 · 파일 2</div></div><span class="text-small text-muted">2시간 전</span></div></div>
+          </div>
+        </div>`
+    },
+    calendar: {
+      title: '캘린더',
+      eyebrow: '개인과 그룹 일정을 한눈에',
+      action: '일정 추가',
+      icon: 'plus',
+      html: `
+        <div class="cw-filter-row"><button class="btn" type="button" aria-pressed="true">전체 공간</button><button class="btn btn-ghost" type="button">우리 가족</button><button class="btn btn-ghost" type="button">친구들</button><button class="btn btn-ghost" type="button">개인</button></div>
+        <div class="cw-section-head"><button class="btn btn-ghost" type="button"><i data-lucide="chevron-left" aria-hidden="true"></i>이전</button><h3>2026년 7월</h3><button class="btn btn-ghost" type="button">다음<i data-lucide="chevron-right" aria-hidden="true"></i></button></div>
+        <div class="cw-week" role="grid" aria-label="2026년 7월 둘째 주">
+          <div class="cw-day" role="gridcell"><span class="cw-day-num text-muted">12 일</span><span class="cw-event-chip friend">친구 생일</span></div>
+          <div class="cw-day is-selected" role="gridcell"><span class="cw-day-num">13 월</span><span class="cw-event-chip">병원 10:00</span><span class="cw-event-chip friend">저녁 18:30</span></div>
+          <div class="cw-day" role="gridcell"><span class="cw-day-num">14 화</span><span class="cw-event-chip">보험 제출</span></div>
+          <div class="cw-day" role="gridcell"><span class="cw-day-num">15 수</span></div>
+          <div class="cw-day" role="gridcell"><span class="cw-day-num">16 목</span><span class="cw-event-chip">마트 장보기</span></div>
+          <div class="cw-day" role="gridcell"><span class="cw-day-num">17 금</span></div>
+          <div class="cw-day" role="gridcell"><span class="cw-day-num text-muted">18 토</span><span class="cw-event-chip friend">등산 모임</span></div>
+        </div>
+        <div class="cw-list"><div class="cw-row"><div class="cw-time">선택일</div><div><div>엄마 병원 진료</div><div class="text-small text-muted">연결 자료: 진료 의뢰서.pdf · 참석 2명</div></div><button class="btn" type="button">상세</button></div></div>`
+    },
+    posts: {
+      title: '공유함',
+      eyebrow: '공지, 글, 링크와 파일',
+      action: '글 작성',
+      icon: 'square-pen',
+      html: `
+        <div class="cw-filter-row"><label class="form-label" style="flex:1; min-width:12rem"><span class="sr-only">공유함 검색</span><input class="form-control" type="search" placeholder="글과 파일 검색"></label><button class="btn" type="button">고정글</button><button class="btn btn-ghost" type="button">최신순</button></div>
+        <div class="cw-list">
+          <div class="cw-row"><i data-lucide="pin" aria-hidden="true"></i><div><div class="cw-line"><span>여름휴가 준비물</span><span class="viz-badge">고정</span></div><div class="text-small text-muted">우리 가족 · 아빠 · 댓글 3 · 파일 2</div></div><button class="btn" type="button">열기</button></div>
+          <div class="cw-row"><i data-lucide="map-pinned" aria-hidden="true"></i><div><div>토요일 등산 코스와 집합 장소</div><div class="text-small text-muted">고등학교 친구들 · 민지 · 댓글 5</div></div><button class="btn" type="button">열기</button></div>
+          <div class="cw-row"><i data-lucide="file-text" aria-hidden="true"></i><div><div>병원 진료 준비 서류</div><div class="text-small text-muted">우리 가족 · 엄마 · PDF 1</div></div><button class="btn" type="button">열기</button></div>
+        </div>`
+    },
+    coupons: {
+      title: '쿠폰함',
+      eyebrow: '공유하고, 선점하고, 사용 완료',
+      action: '쿠폰 등록',
+      icon: 'plus',
+      html: `
+        <div class="cw-filter-row"><button class="btn" type="button" aria-pressed="true">사용 가능 4</button><button class="btn btn-ghost" type="button">선점 중 1</button><button class="btn btn-ghost" type="button">사용 완료</button><button class="btn btn-ghost" type="button">만료</button></div>
+        <div class="cw-list">
+          <div class="cw-row"><i data-lucide="coffee" aria-hidden="true"></i><div><div class="cw-line"><span>카페 아메리카노</span><span class="viz-badge">D-2</span></div><div class="text-small text-muted">우리 가족 · 번호 •••• 4821 · 사용 가능</div></div><button class="btn btn-primary" type="button">사용할게요</button></div>
+          <div class="cw-row"><i data-lucide="utensils" aria-hidden="true"></i><div><div>치킨 세트</div><div class="cw-coupon-status text-small"><span class="cw-dot friend"></span><span>민지가 사용 준비 중</span><span class="cw-countdown">12:41</span></div></div><button class="btn" type="button" disabled>선점 중</button></div>
+          <div class="cw-row"><i data-lucide="cake-slice" aria-hidden="true"></i><div><div class="cw-line"><span>조각 케이크</span><span class="viz-badge">D-6</span></div><div class="text-small text-muted">고등학교 친구들 · 번호 •••• 1087 · 사용 가능</div></div><button class="btn btn-primary" type="button">사용할게요</button></div>
+        </div>
+        <p class="text-small text-muted" style="margin-top:.75rem">바코드는 쿠폰을 선점하고 다시 확인한 구성원에게만 제한 시간 동안 표시됩니다.</p>`
+    },
+    members: {
+      title: '구성원',
+      eyebrow: '우리 가족 · 4명',
+      action: '초대',
+      icon: 'user-plus',
+      html: `
+        <div class="cw-section-head"><div><h3>그룹 구성원</h3><p class="text-small text-muted">일정, 공유글, 쿠폰 접근 권한을 관리합니다.</p></div></div>
+        <div class="cw-list">
+          <div class="cw-row"><span class="cw-avatar">나</span><div><div>훈</div><div class="text-small text-muted">hoon@example.com</div></div><span class="viz-badge">소유자</span></div>
+          <div class="cw-row"><span class="cw-avatar">엄</span><div><div>엄마</div><div class="text-small text-muted">3일 전 참여</div></div><button class="btn" type="button">멤버</button></div>
+          <div class="cw-row"><span class="cw-avatar">민</span><div><div>민지</div><div class="text-small text-muted">어제 참여</div></div><button class="btn" type="button">관리자</button></div>
+          <div class="cw-row"><span class="cw-avatar">동</span><div><div>동생</div><div class="text-small text-muted">초대 수락 대기</div></div><button class="btn btn-ghost" type="button">재전송</button></div>
+        </div>`
+    },
+    settings: {
+      title: '설정',
+      eyebrow: '프로필, 공간과 알림',
+      action: '저장',
+      icon: 'save',
+      html: `
+        <div class="cw-columns">
+          <div class="cw-column"><h3>내 설정</h3><div class="viz-controls"><label class="form-label">표시 이름<input class="form-control" value="훈"></label><label class="form-label">시간대<select class="form-select"><option>Asia/Seoul</option></select></label></div></div>
+          <div class="cw-column"><h3>알림</h3><label class="form-check form-switch"><input class="form-check-input" type="checkbox" id="event-alert" checked><span class="form-check-label">일정 리마인더</span></label><label class="form-check form-switch"><input class="form-check-input" type="checkbox" id="coupon-alert" checked><span class="form-check-label">쿠폰 만료 알림</span></label><label class="form-check form-switch"><input class="form-check-input" type="checkbox" id="comment-alert"><span class="form-check-label">댓글 이메일</span></label></div>
+        </div>`
+    }
+  };
+
+  function render(name) {
+    const data = screens[name] || screens.today;
+    title.textContent = data.title;
+    eyebrow.textContent = data.eyebrow;
+    primary.innerHTML = `<i data-lucide="${data.icon}" aria-hidden="true"></i><span>${data.action}</span>`;
+    screen.innerHTML = data.html;
+    root.querySelectorAll('[data-screen]').forEach((button) => {
+      button.setAttribute('aria-pressed', button.dataset.screen === name ? 'true' : 'false');
+    });
+    if (window.lucide) window.lucide.createIcons({ attrs: { width: 16, height: 16 } });
+  }
+
+  root.querySelectorAll('[data-screen]').forEach((button) => {
+    button.addEventListener('click', () => render(button.dataset.screen));
+  });
+
+  render('today');
+})();
+</script>

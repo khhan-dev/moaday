@@ -1,0 +1,10 @@
+{
+  "name": "MoaDay",
+  "short_name": "MoaDay",
+  "description": "가족과 친구의 일정, 자료, 쿠폰을 함께 관리합니다.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f5ef",
+  "theme_color": "#155239",
+  "lang": "ko"
+}

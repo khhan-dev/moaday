@@ -1,0 +1,228 @@
+package com.couponwith.space;
+
+import com.couponwith.common.ApiException;
+import com.couponwith.identity.UserRepository;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Base64;
+import java.util.List;
+import java.util.Locale;
+import java.util.UUID;
+
+@Service
+public class SpaceService {
+    private final SpaceRepository spaces;
+    private final SpaceMemberRepository members;
+    private final InvitationRepository invitations;
+    private final UserRepository users;
+    private final SecureRandom secureRandom = new SecureRandom();
+
+    public SpaceService(SpaceRepository spaces, SpaceMemberRepository members,
+                        InvitationRepository invitations, UserRepository users) {
+        this.spaces = spaces;
+        this.members = members;
+        this.invitations = invitations;
+        this.users = users;
+    }
+
+    @Transactional(readOnly = true)
+    public List<SpaceView> list(UUID userId) {
+        return members.findByUserIdAndStatusOrderByJoinedAt(userId, "ACTIVE").stream()
+                .map(member -> {
+                    var space = spaces.findById(member.getSpaceId())
+                            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "SPACE_NOT_FOUND", "공간을 찾을 수 없습니다."));
+                    return SpaceView.from(space, member.getRole());
+                }).toList();
+    }
+
+    @Transactional
+    public SpaceView create(UUID userId, SpaceType type, String name, String timezone, String color) {
+        if (type == SpaceType.PERSONAL) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_SPACE_TYPE", "개인 공간은 자동으로 생성됩니다.");
+        }
+        requireUser(userId);
+        var space = spaces.save(new Space(UUID.randomUUID(), type, name.trim(), userId, timezone, color));
+        members.save(new SpaceMember(space.getId(), userId, SpaceRole.OWNER));
+        return SpaceView.from(space, SpaceRole.OWNER);
+    }
+
+    @Transactional
+    public InvitationView invite(UUID actorId, UUID spaceId, String rawEmail, SpaceRole role) {
+        var actor = requireMembership(spaceId, actorId);
+        if (actor.getRole() != SpaceRole.OWNER && actor.getRole() != SpaceRole.ADMIN) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "INVITE_NOT_ALLOWED", "구성원을 초대할 권한이 없습니다.");
+        }
+        if (role == SpaceRole.OWNER) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_INVITE_ROLE", "초대 단계에서는 소유자 역할을 부여할 수 없습니다.");
+        }
+        if (actor.getRole() == SpaceRole.ADMIN && role == SpaceRole.ADMIN) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "ADMIN_INVITE_NOT_ALLOWED", "관리자 지정은 소유자만 할 수 있습니다.");
+        }
+        var email = rawEmail.trim().toLowerCase(Locale.ROOT);
+        users.findByEmailIgnoreCase(email).ifPresent(user -> {
+            if (members.findBySpaceIdAndUserIdAndStatus(spaceId, user.getId(), "ACTIVE").isPresent()) {
+                throw new ApiException(HttpStatus.CONFLICT, "MEMBER_ALREADY_EXISTS", "이미 공간에 참여 중인 구성원입니다.");
+            }
+        });
+        if (invitations.existsBySpaceIdAndEmailIgnoreCaseAndAcceptedAtIsNullAndRevokedAtIsNullAndExpiresAtAfter(
+                spaceId, email, Instant.now())) {
+            throw new ApiException(HttpStatus.CONFLICT, "ACTIVE_INVITATION_EXISTS", "이미 대기 중인 초대가 있습니다.");
+        }
+        var rawToken = generateToken();
+        var invitation = invitations.save(new Invitation(UUID.randomUUID(), spaceId, email, role,
+                hash(rawToken), actorId, Instant.now().plus(Duration.ofDays(7))));
+        return new InvitationView(invitation.getId(), invitation.getSpaceId(), email, role,
+                invitation.getExpiresAt(), rawToken);
+    }
+
+    @Transactional
+    public SpaceView accept(UUID userId, String rawToken) {
+        var user = requireUser(userId);
+        var invitation = invitations.findByTokenHash(hash(rawToken))
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "INVITATION_NOT_FOUND", "초대를 찾을 수 없습니다."));
+        if (!invitation.isActive()) {
+            throw new ApiException(HttpStatus.GONE, "INVITATION_EXPIRED", "초대가 만료되었거나 취소되었습니다.");
+        }
+        if (!invitation.getEmail().equalsIgnoreCase(user.getEmail())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "INVITATION_EMAIL_MISMATCH", "초대받은 이메일 계정으로 로그인해 주세요.");
+        }
+        if (members.findBySpaceIdAndUserIdAndStatus(invitation.getSpaceId(), userId, "ACTIVE").isEmpty()) {
+            members.save(new SpaceMember(invitation.getSpaceId(), userId, invitation.getRole()));
+        }
+        invitation.accept();
+        var space = spaces.findById(invitation.getSpaceId())
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "SPACE_NOT_FOUND", "공간을 찾을 수 없습니다."));
+        return SpaceView.from(space, invitation.getRole());
+    }
+
+    @Transactional(readOnly = true)
+    public List<MemberView> listMembers(UUID actorId, UUID spaceId) {
+        requireMembership(spaceId, actorId);
+        return members.findBySpaceIdAndStatusOrderByJoinedAt(spaceId, "ACTIVE").stream()
+                .map(member -> {
+                    var user = users.findById(member.getUserId())
+                            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "구성원을 찾을 수 없습니다."));
+                    return new MemberView(user.getId(), user.getDisplayName(), user.getEmail(), member.getRole(),
+                            member.getJoinedAt(), user.getId().equals(actorId));
+                }).toList();
+    }
+
+    @Transactional
+    public MemberView changeMemberRole(UUID actorId, UUID spaceId, UUID memberUserId, SpaceRole role) {
+        var actor = requireManager(spaceId, actorId);
+        var target = requireMembership(spaceId, memberUserId);
+        validateMemberMutation(actorId, actor, memberUserId, target);
+        if (role == SpaceRole.OWNER) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "OWNER_TRANSFER_REQUIRED", "소유자 변경은 별도 이전 절차가 필요합니다.");
+        }
+        if (actor.getRole() == SpaceRole.ADMIN && role == SpaceRole.ADMIN) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "ADMIN_PROMOTION_NOT_ALLOWED", "관리자 지정은 소유자만 할 수 있습니다.");
+        }
+        target.changeRole(role);
+        var user = requireUser(memberUserId);
+        return new MemberView(user.getId(), user.getDisplayName(), user.getEmail(), target.getRole(),
+                target.getJoinedAt(), false);
+    }
+
+    @Transactional
+    public void removeMember(UUID actorId, UUID spaceId, UUID memberUserId) {
+        var actor = requireManager(spaceId, actorId);
+        var target = requireMembership(spaceId, memberUserId);
+        validateMemberMutation(actorId, actor, memberUserId, target);
+        target.remove();
+    }
+
+    @Transactional(readOnly = true)
+    public List<InvitationSummaryView> listInvitations(UUID actorId, UUID spaceId) {
+        requireManager(spaceId, actorId);
+        return invitations.findBySpaceIdOrderByCreatedAtDesc(spaceId).stream()
+                .map(InvitationSummaryView::from)
+                .toList();
+    }
+
+    @Transactional
+    public InvitationSummaryView revokeInvitation(UUID actorId, UUID spaceId, UUID invitationId) {
+        requireManager(spaceId, actorId);
+        var invitation = invitations.findById(invitationId)
+                .filter(item -> item.getSpaceId().equals(spaceId))
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "INVITATION_NOT_FOUND", "초대를 찾을 수 없습니다."));
+        if (!invitation.isActive()) {
+            throw new ApiException(HttpStatus.CONFLICT, "INVITATION_NOT_PENDING", "대기 중인 초대만 취소할 수 있습니다.");
+        }
+        invitation.revoke();
+        return InvitationSummaryView.from(invitation);
+    }
+
+    private SpaceMember requireManager(UUID spaceId, UUID actorId) {
+        var actor = requireMembership(spaceId, actorId);
+        if (actor.getRole() != SpaceRole.OWNER && actor.getRole() != SpaceRole.ADMIN) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "MEMBER_MANAGEMENT_NOT_ALLOWED", "구성원을 관리할 권한이 없습니다.");
+        }
+        return actor;
+    }
+
+    private void validateMemberMutation(UUID actorId, SpaceMember actor, UUID targetUserId, SpaceMember target) {
+        if (actorId.equals(targetUserId)) {
+            throw new ApiException(HttpStatus.CONFLICT, "SELF_MANAGEMENT_NOT_ALLOWED", "자신의 역할을 변경하거나 자신을 추방할 수 없습니다.");
+        }
+        if (target.getRole() == SpaceRole.OWNER) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "OWNER_PROTECTED", "공간 소유자는 변경하거나 추방할 수 없습니다.");
+        }
+        if (actor.getRole() == SpaceRole.ADMIN && target.getRole() == SpaceRole.ADMIN) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "ADMIN_MANAGEMENT_NOT_ALLOWED", "관리자는 다른 관리자를 변경하거나 추방할 수 없습니다.");
+        }
+    }
+
+    private SpaceMember requireMembership(UUID spaceId, UUID userId) {
+        return members.findBySpaceIdAndUserIdAndStatus(spaceId, userId, "ACTIVE")
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "SPACE_NOT_FOUND", "공간을 찾을 수 없습니다."));
+    }
+
+    private com.couponwith.identity.UserAccount requireUser(UUID userId) {
+        return users.findById(userId)
+                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "USER_NOT_FOUND", "사용자를 찾을 수 없습니다."));
+    }
+
+    private String generateToken() {
+        var bytes = new byte[32];
+        secureRandom.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    private String hash(String value) {
+        try {
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(
+                    MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
+        }
+    }
+
+    public record SpaceView(UUID id, SpaceType type, String name, String timezone, String color, SpaceRole role) {
+        static SpaceView from(Space space, SpaceRole role) {
+            return new SpaceView(space.getId(), space.getType(), space.getName(), space.getTimezone(), space.getColor(), role);
+        }
+    }
+
+    public record InvitationView(UUID id, UUID spaceId, String email, SpaceRole role, Instant expiresAt,
+                                 String oneTimeToken) {}
+
+    public record MemberView(UUID userId, String displayName, String email, SpaceRole role, Instant joinedAt,
+                             boolean currentUser) {}
+
+    public record InvitationSummaryView(UUID id, UUID spaceId, String email, SpaceRole role, Instant expiresAt,
+                                        String status, Instant createdAt) {
+        static InvitationSummaryView from(Invitation invitation) {
+            return new InvitationSummaryView(invitation.getId(), invitation.getSpaceId(), invitation.getEmail(),
+                    invitation.getRole(), invitation.getExpiresAt(), invitation.status(), invitation.getCreatedAt());
+        }
+    }
+}
