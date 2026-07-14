@@ -1,5 +1,6 @@
 package com.couponwith.coupon;
 
+import com.couponwith.audit.AuditService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import org.springframework.http.HttpStatus;
@@ -21,6 +22,9 @@ public class CouponController {
     @PostMapping("/coupons/{couponId}/release") CouponService.CouponView release(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID couponId){return service.release(userId(jwt),couponId);}
     @PostMapping("/coupons/{couponId}/use") CouponService.CouponView use(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID couponId){return service.use(userId(jwt),couponId);}
     @GetMapping("/coupons/{couponId}/barcode") CouponService.BarcodeView barcode(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID couponId){return service.barcode(userId(jwt),couponId);}
+    @GetMapping("/coupons/{couponId}/history") List<AuditService.AuditView> history(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID couponId){return service.history(userId(jwt),couponId);}
+    @PostMapping("/coupons/{couponId}/correct") CouponService.CouponView correct(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID couponId,@Valid @RequestBody CorrectionRequest request){return service.correct(userId(jwt),couponId,request.status(),request.reason());}
     private UUID userId(Jwt jwt){return UUID.fromString(jwt.getSubject());}
     record CouponRequest(@NotBlank @Size(max=120) String title,@NotBlank @Size(max=80) String brand,@Size(max=2000) String description,@NotNull Instant expiresAt,@NotBlank @Size(max=500) String barcodeValue,@NotBlank @Size(max=30) String barcodeFormat){CouponService.CouponInput input(){return new CouponService.CouponInput(title,brand,description,expiresAt,barcodeValue,barcodeFormat);}}
+    record CorrectionRequest(@NotNull CouponStatus status,@NotBlank @Size(min=5,max=500) String reason){}
 }

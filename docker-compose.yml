@@ -31,6 +31,7 @@ services:
       STORAGE_PATH: /data/moaday
       MAIL_HOST: mailpit
       MAIL_PORT: 1025
+      COUPON_CLAIM_MINUTES: ${COUPON_CLAIM_MINUTES:-15}
     ports:
       - "8080:8080"
     volumes:

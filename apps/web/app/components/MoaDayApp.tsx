@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { api, AuthResult, DashboardData, Invitation, InvitationSummary, SearchResult, Space, SpaceMember, SpaceRole, SpaceType } from "../lib/api";
+import { api, AuditEntry, AuthResult, DashboardData, Invitation, InvitationSummary, SearchResult, Space, SpaceMember, SpaceRole, SpaceType } from "../lib/api";
 import styles from "./CouponWithApp.module.css";
 import { CalendarView } from "./CalendarView";
 import { SharedView } from "./SharedView";
@@ -9,6 +9,7 @@ import { CouponView } from "./CouponView";
 import { SettingsView } from "./SettingsView";
 
 type View = "today" | "calendar" | "posts" | "coupons" | "spaces" | "settings";
+const SESSION_KEY = "moaday.auth.v1";
 
 const demoSpaces: Space[] = [
   { id: "personal", type: "PERSONAL", name: "훈의 개인 공간", timezone: "Asia/Seoul", color: "sky", role: "OWNER" },
@@ -24,6 +25,7 @@ const navigation: Array<{ id: View; label: string; mark: string }> = [
   { id: "spaces", label: "공간", mark: "◎" },
   { id: "settings", label: "알림·설정", mark: "⚙" },
 ];
+const auditActionLabel:Record<string,string>={MEMBER_ROLE_CHANGED:"역할 변경",MEMBER_REMOVED:"구성원 추방",MEMBER_LEFT:"구성원 탈퇴",SPACE_ARCHIVED:"공간 삭제",FILE_DOWNLOADED:"파일 열람",COUPON_CREATED:"쿠폰 등록",COUPON_UPDATED:"쿠폰 수정",COUPON_CLAIMED:"쿠폰 선점",COUPON_RELEASED:"선점 해제",COUPON_AUTO_RELEASED:"자동 해제",COUPON_REVEALED:"바코드 열람",COUPON_USED:"사용 완료",COUPON_EXPIRED:"쿠폰 만료",COUPON_CORRECTED:"상태 정정"};
 
 export function MoaDayApp() {
   const [session, setSession] = useState<AuthResult | null>(null);
@@ -32,6 +34,10 @@ export function MoaDayApp() {
   const [isDemo, setIsDemo] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [sessionChecked,setSessionChecked]=useState(false);
+  const [inviteToken,setInviteToken]=useState("");
+
+  useEffect(()=>{let active=true;async function restore(){await Promise.resolve();const url=new URL(window.location.href);const queryToken=url.searchParams.get("invite")??"";if(active)setInviteToken(queryToken);const saved=window.localStorage.getItem(SESSION_KEY);if(!saved){if(active)setSessionChecked(true);return}try{const restored=JSON.parse(saved) as AuthResult;if(new Date(restored.expiresAt).getTime()<=Date.now())throw new Error("expired");const loadedSpaces=await api.listSpaces(restored.accessToken);if(active){setSession(restored);setSpaces(loadedSpaces)}}catch{window.localStorage.removeItem(SESSION_KEY)}finally{if(active)setSessionChecked(true)}}void restore();return()=>{active=false}},[]);
 
   useEffect(() => {
     if (!session) return;
@@ -49,8 +55,15 @@ export function MoaDayApp() {
     setUnreadCount(1);
   };
 
+  const saveSession=(next:AuthResult,loadedSpaces?:Space[])=>{window.localStorage.setItem(SESSION_KEY,JSON.stringify(next));setSession(next);if(loadedSpaces)setSpaces(loadedSpaces)};
+  const logout=()=>{window.localStorage.removeItem(SESSION_KEY);setSession(null);setSpaces([]);setUnreadCount(0);setView("today")};
+  const exitCurrent=()=>{if(isDemo){setIsDemo(false);setSpaces([]);setUnreadCount(0);setView("today")}else logout()};
+  const clearInvitation=()=>{setInviteToken("");const url=new URL(window.location.href);url.searchParams.delete("invite");window.history.replaceState({},"",`${url.pathname}${url.search}${url.hash}`)};
+
+  if(!sessionChecked)return <main className={styles.authLoading}><Brand/><p>로그인 정보를 확인하는 중…</p></main>;
+
   if (!session && !isDemo) {
-    return <AuthScreen onAuthenticated={(result, loadedSpaces) => { setSession(result); setSpaces(loadedSpaces); }} onDemo={enterDemo} />;
+    return <AuthScreen invitePending={Boolean(inviteToken)} onAuthenticated={(result, loadedSpaces) => saveSession(result,loadedSpaces)} onDemo={enterDemo} />;
   }
 
   const displayName = session?.user.displayName ?? "훈";
@@ -66,7 +79,7 @@ export function MoaDayApp() {
             </button>
           ))}
         </nav>
-        <div className={styles.account}><span className={styles.avatar}>{displayName.slice(0, 1)}</span><span><strong>{displayName}</strong><small>{isDemo ? "데모 모드" : session?.user.email}</small></span></div>
+        <div className={styles.account}><span className={styles.avatar}>{displayName.slice(0, 1)}</span><span><strong>{displayName}</strong><small>{isDemo ? "데모 모드" : session?.user.email}</small></span><button type="button" className={styles.logoutButton} onClick={exitCurrent}>로그아웃</button></div>
       </aside>
 
       <main className={styles.main}>
@@ -80,10 +93,11 @@ export function MoaDayApp() {
         {view === "posts" && <SharedView spaces={spaces} session={session} demo={isDemo} />}
         {view === "coupons" && <CouponView spaces={spaces} session={session} demo={isDemo} />}
         {view === "spaces" && <SpacesView spaces={spaces} session={session} demo={isDemo} onSpacesChange={setSpaces} />}
-        {view === "settings" && <SettingsView session={session} demo={isDemo} onSessionChange={setSession} onUnreadChange={setUnreadCount} onDeleted={() => { setSession(null); setIsDemo(false); setSpaces([]); setUnreadCount(0); setView("today"); }} />}
+        {view === "settings" && <SettingsView session={session} demo={isDemo} onSessionChange={saveSession} onUnreadChange={setUnreadCount} onLogout={exitCurrent} onDeleted={() => { window.localStorage.removeItem(SESSION_KEY); setSession(null); setIsDemo(false); setSpaces([]); setUnreadCount(0); setView("today"); }} />}
       </main>
 
       {searchOpen && <SearchModal session={session} demo={isDemo} onClose={() => setSearchOpen(false)} onSelect={(target) => { setView(target); setSearchOpen(false); }} />}
+      {inviteToken&&session&&<InvitationAcceptance token={inviteToken} session={session} onClose={clearInvitation} onAccepted={(space)=>{setSpaces(current=>current.some(item=>item.id===space.id)?current:[...current,space]);clearInvitation();setView("spaces")}}/>}
 
       <nav className={styles.bottomNav} aria-label="모바일 주요 메뉴">
         {navigation.map((item) => <button type="button" key={item.id} aria-current={view === item.id ? "page" : undefined} onClick={() => setView(item.id)}><span aria-hidden="true">{item.mark}</span>{item.label}</button>)}
@@ -91,6 +105,8 @@ export function MoaDayApp() {
     </div>
   );
 }
+
+function InvitationAcceptance({token,session,onClose,onAccepted}:{token:string;session:AuthResult;onClose:()=>void;onAccepted:(space:Space)=>void}){const [busy,setBusy]=useState(false);const [error,setError]=useState("");async function accept(){setBusy(true);setError("");try{onAccepted(await api.acceptInvitation(session.accessToken,token))}catch(reason){setError(reason instanceof Error?reason.message:"초대를 수락하지 못했습니다.")}finally{setBusy(false)}}return <div className={styles.modalBackdrop}><div className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="invitation-accept-title"><button className={styles.closeButton} type="button" aria-label="나중에 하기" onClick={onClose}>×</button><p className={styles.eyebrow}>MoaDay 공간 초대</p><h2 id="invitation-accept-title">초대를 수락할까요?</h2><p className={styles.modalDescription}>{session.user.email} 계정으로 초대된 공간에 참여합니다.</p>{error&&<p className={styles.error} role="alert">{error}</p>}<button type="button" className={styles.primaryButtonLarge} disabled={busy} onClick={accept}>{busy?"참여하는 중…":"초대 수락하고 참여"}</button><button type="button" className={styles.textButton} onClick={onClose}>나중에 하기</button></div></div>}
 
 function Brand() {
   return <div className={styles.brand}><span className={styles.brandMark}>M</span><span>MoaDay</span></div>;
@@ -105,7 +121,7 @@ function SearchModal({ session, demo, onClose, onSelect }: { session: AuthResult
 
 function demoSearch(query:string):SearchResult[]{const values:SearchResult[]=[{type:"EVENT",id:"demo-event",spaceId:"family",spaceName:"우리 가족",title:"엄마 병원 진료",summary:"서울병원",occurredAt:new Date().toISOString(),targetView:"calendar"},{type:"POST",id:"demo-post",spaceId:"family",spaceName:"우리 가족",title:"여름휴가 준비물",summary:"여권, 충전기, 상비약",occurredAt:new Date().toISOString(),targetView:"posts"},{type:"COUPON",id:"demo-coupon",spaceId:"family",spaceName:"우리 가족",title:"아메리카노 쿠폰",summary:"Moa Cafe",occurredAt:new Date().toISOString(),targetView:"coupons"}];return values.filter(item=>`${item.title} ${item.summary}`.includes(query));}
 
-function AuthScreen({ onAuthenticated, onDemo }: { onAuthenticated: (result: AuthResult, spaces: Space[]) => void; onDemo: () => void }) {
+function AuthScreen({ onAuthenticated, onDemo,invitePending }: { onAuthenticated: (result: AuthResult, spaces: Space[]) => void; onDemo: () => void;invitePending:boolean }) {
   const [mode, setMode] = useState<"login" | "register">("register");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -142,6 +158,7 @@ function AuthScreen({ onAuthenticated, onDemo }: { onAuthenticated: (result: Aut
       </section>
 
       <section className={styles.authPanel}>
+        {invitePending&&<p className={styles.inviteNotice}>초대받은 이메일 계정으로 로그인하거나 회원가입해 주세요.</p>}
         <p className={styles.eyebrow}>{mode === "register" ? "첫 공간을 시작해 보세요" : "다시 만나서 반가워요"}</p>
         <h2>{mode === "register" ? "무료로 시작하기" : "로그인"}</h2>
         <div className={styles.modeTabs} role="tablist" aria-label="인증 방식">
@@ -200,6 +217,7 @@ function SpacesView({ spaces, session, demo, onSpacesChange }: { spaces: Space[]
   const [managedSpace, setManagedSpace] = useState<Space | null>(null);
   const [spaceMembers, setSpaceMembers] = useState<SpaceMember[]>([]);
   const [spaceInvitations, setSpaceInvitations] = useState<InvitationSummary[]>([]);
+  const [spaceAudits,setSpaceAudits]=useState<AuditEntry[]>([]);
   const [createdInvitation, setCreatedInvitation] = useState<Invitation | null>(null);
   const [managementLoading, setManagementLoading] = useState(false);
   const [error, setError] = useState("");
@@ -245,13 +263,16 @@ function SpacesView({ spaces, session, demo, onSpacesChange }: { spaces: Space[]
           { userId: "demo-member", displayName: "이하루", email: "member@moaday.test", role: "MEMBER", joinedAt: new Date().toISOString(), currentUser: space.role === "MEMBER" },
         ]);
         setSpaceInvitations(canManage ? [{ id: "demo-invite", spaceId: space.id, email: "friend@moaday.test", role: "VIEWER", expiresAt: new Date(new Date().getTime() + 604800000).toISOString(), status: "PENDING", createdAt: new Date().toISOString() }] : []);
+        setSpaceAudits(canManage?[{id:"demo-audit",spaceId:space.id,actorId:"demo-owner",actorName:"김모아",action:"MEMBER_ROLE_CHANGED",resourceType:"MEMBER",summary:"이하루 역할 변경: VIEWER → MEMBER",createdAt:new Date().toISOString()}]:[]);
       } else {
-        const [loadedMembers, loadedInvitations] = await Promise.all([
+        const [loadedMembers, loadedInvitations,loadedAudits] = await Promise.all([
           api.listMembers(session!.accessToken, space.id),
           canManage ? api.listInvitations(session!.accessToken, space.id) : Promise.resolve([]),
+          canManage ? api.listAuditLogs(session!.accessToken,space.id) : Promise.resolve([]),
         ]);
         setSpaceMembers(loadedMembers);
         setSpaceInvitations(loadedInvitations);
+        setSpaceAudits(loadedAudits);
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "공간 정보를 불러오지 못했습니다.");
@@ -265,6 +286,7 @@ function SpacesView({ spaces, session, demo, onSpacesChange }: { spaces: Space[]
     try {
       const changed = demo ? { ...member, role } : await api.changeMemberRole(session!.accessToken, managedSpace.id, member.userId, role);
       setSpaceMembers((current) => current.map((item) => item.userId === changed.userId ? changed : item));
+      if(!demo)setSpaceAudits(await api.listAuditLogs(session!.accessToken,managedSpace.id));
       setError("");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "역할을 변경하지 못했습니다."); }
   }
@@ -274,6 +296,7 @@ function SpacesView({ spaces, session, demo, onSpacesChange }: { spaces: Space[]
     try {
       if (!demo) await api.removeMember(session!.accessToken, managedSpace.id, member.userId);
       setSpaceMembers((current) => current.filter((item) => item.userId !== member.userId));
+      if(!demo)setSpaceAudits(await api.listAuditLogs(session!.accessToken,managedSpace.id));
       setError("");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "구성원을 추방하지 못했습니다."); }
   }
@@ -286,6 +309,8 @@ function SpacesView({ spaces, session, demo, onSpacesChange }: { spaces: Space[]
       setError("");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "초대를 취소하지 못했습니다."); }
   }
+
+  async function exitSpace(){if(!managedSpace)return;const deleting=managedSpace.role==="OWNER";const prompt=deleting?`“${managedSpace.name}” 공간을 삭제할까요? 모든 구성원의 접근이 즉시 종료됩니다.`:`“${managedSpace.name}” 공간에서 탈퇴할까요?`;if(!window.confirm(prompt))return;try{if(!demo){if(deleting)await api.archiveSpace(session!.accessToken,managedSpace.id);else await api.leaveSpace(session!.accessToken,managedSpace.id)}onSpacesChange(spaces.filter(item=>item.id!==managedSpace.id));setManagedSpace(null);setError("")}catch(reason){setError(reason instanceof Error?reason.message:deleting?"공간을 삭제하지 못했습니다.":"공간에서 탈퇴하지 못했습니다.")}}
 
   const canManage = managedSpace?.role === "OWNER" || managedSpace?.role === "ADMIN";
   const roleLabel = (role: SpaceRole) => ({ OWNER: "소유자", ADMIN: "관리자", MEMBER: "멤버", VIEWER: "열람자" })[role];
@@ -309,9 +334,11 @@ function SpacesView({ spaces, session, demo, onSpacesChange }: { spaces: Space[]
             return <div className={styles.memberRow} key={member.userId}><span className={styles.avatar}>{member.displayName.slice(0, 1)}</span><div><strong>{member.displayName}{member.currentUser ? " (나)" : ""}</strong><small>{member.email}</small></div>{editable ? <select aria-label={`${member.displayName} 역할`} value={member.role} onChange={(event) => changeRole(member, event.target.value as SpaceRole)}>{managedSpace.role === "OWNER" && <option value="ADMIN">관리자</option>}<option value="MEMBER">멤버</option><option value="VIEWER">열람자</option></select> : <span className={styles.statusChip}>{roleLabel(member.role)}</span>}{editable && <button className={styles.dangerButton} type="button" onClick={() => removeMember(member)}>추방</button>}</div>;
           })}</div></section>
 
-          {canManage && <section><div className={styles.managementHeading}><div><h3>새 구성원 초대</h3><p>초대 링크는 7일 동안 유효합니다.</p></div></div>{createdInvitation ? <div className={styles.inviteResult}><strong>{createdInvitation.email}</strong><code>{`${location.origin}/invite/${createdInvitation.oneTimeToken}`}</code><button className={styles.primaryButtonLarge} type="button" onClick={() => navigator.clipboard?.writeText(`${location.origin}/invite/${createdInvitation.oneTimeToken}`)}>초대 링크 복사</button><button className={styles.textButton} type="button" onClick={() => setCreatedInvitation(null)}>다른 구성원 초대</button></div> : <form className={`${styles.form} ${styles.inlineInviteForm}`} onSubmit={invite}><label>이메일<input required type="email" name="email" placeholder="member@example.com" /></label><label>역할<select name="role" defaultValue="MEMBER"><option value="MEMBER">멤버</option>{managedSpace.role === "OWNER" && <option value="ADMIN">관리자</option>}<option value="VIEWER">열람자</option></select></label><button className={styles.primaryButtonLarge}>초대 만들기</button></form>}</section>}
+          {canManage && <section><div className={styles.managementHeading}><div><h3>새 구성원 초대</h3><p>초대 링크는 7일 동안 유효합니다.</p></div></div>{createdInvitation ? <div className={styles.inviteResult}><strong>{createdInvitation.email}</strong><code>{`${location.origin}/?invite=${encodeURIComponent(createdInvitation.oneTimeToken)}`}</code><button className={styles.primaryButtonLarge} type="button" onClick={() => navigator.clipboard?.writeText(`${location.origin}/?invite=${encodeURIComponent(createdInvitation.oneTimeToken)}`)}>초대 링크 복사</button><button className={styles.textButton} type="button" onClick={() => setCreatedInvitation(null)}>다른 구성원 초대</button></div> : <form className={`${styles.form} ${styles.inlineInviteForm}`} onSubmit={invite}><label>이메일<input required type="email" name="email" placeholder="member@example.com" /></label><label>역할<select name="role" defaultValue="MEMBER"><option value="MEMBER">멤버</option>{managedSpace.role === "OWNER" && <option value="ADMIN">관리자</option>}<option value="VIEWER">열람자</option></select></label><button className={styles.primaryButtonLarge}>초대 만들기</button></form>}</section>}
 
           {canManage && <section><div className={styles.managementHeading}><div><h3>초대 이력</h3><p>만료되거나 취소된 초대도 확인할 수 있습니다.</p></div></div><div className={styles.invitationList}>{spaceInvitations.length === 0 ? <p className={styles.empty}>아직 발급된 초대가 없습니다.</p> : spaceInvitations.map((invitation) => <div key={invitation.id}><div><strong>{invitation.email}</strong><small>{roleLabel(invitation.role)} · {new Date(invitation.expiresAt).toLocaleDateString("ko-KR")}까지</small></div><span className={styles.statusChip} data-status={invitation.status}>{invitationStatusLabel(invitation.status)}</span>{invitation.status === "PENDING" && <button className={styles.dangerButton} type="button" onClick={() => revokeInvitation(invitation)}>취소</button>}</div>)}</div></section>}
+          {canManage&&<section><div className={styles.managementHeading}><div><h3>감사 기록</h3><p>최근 중요 작업 100건을 확인합니다.</p></div></div><div className={styles.auditList}>{spaceAudits.length===0?<p className={styles.empty}>아직 기록된 중요 작업이 없습니다.</p>:spaceAudits.map(entry=><div key={entry.id}><i/><span><strong>{auditActionLabel[entry.action]??entry.action}</strong><small>{entry.summary}</small>{entry.reason&&<em>사유: {entry.reason}</em>}</span><time>{entry.actorName}<br/>{new Date(entry.createdAt).toLocaleString("ko-KR")}</time></div>)}</div></section>}
+          <section className={styles.spaceLifecycle}><div><h3>{managedSpace.role==="OWNER"?"공간 삭제":"공간 탈퇴"}</h3><p>{managedSpace.role==="OWNER"?"모든 구성원의 접근을 종료하고 공간을 보관 처리합니다.":"내 접근 권한을 종료합니다. 다시 참여하려면 새 초대가 필요합니다."}</p></div><button type="button" className={styles.dangerOutlineButton} onClick={exitSpace}>{managedSpace.role==="OWNER"?"공간 삭제":"공간 탈퇴"}</button></section>
         </div>}
         {error && <p className={styles.error} role="alert">{error}</p>}
       </div></div>}

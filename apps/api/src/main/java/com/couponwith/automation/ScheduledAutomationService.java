@@ -1,5 +1,6 @@
 package com.couponwith.automation;
 
+import com.couponwith.audit.AuditService;
 import com.couponwith.calendar.AttendanceStatus;
 import com.couponwith.calendar.CalendarEvent;
 import com.couponwith.calendar.CalendarEventRepository;
@@ -16,6 +17,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -33,18 +35,24 @@ public class ScheduledAutomationService {
     private final EventReminderDeliveryRepository deliveries;
     private final NotificationService notifications;
     private final long reminderLookbackMinutes;
+    private final AuditService audits;
+    private final Duration couponClaimTimeout;
 
     public ScheduledAutomationService(CouponRepository coupons, CalendarEventRepository events,
                                       EventReminderRepository reminders, EventAttendeeRepository attendees,
                                       EventReminderDeliveryRepository deliveries, NotificationService notifications,
-                                      @Value("${moaday.automation.reminder-lookback-minutes:10}") long reminderLookbackMinutes) {
+                                      AuditService audits,
+                                      @Value("${moaday.automation.reminder-lookback-minutes:10}") long reminderLookbackMinutes,
+                                      @Value("${moaday.coupons.claim-minutes:15}") long couponClaimMinutes) {
         this.coupons = coupons;
         this.events = events;
         this.reminders = reminders;
         this.attendees = attendees;
         this.deliveries = deliveries;
         this.notifications = notifications;
+        this.audits = audits;
         this.reminderLookbackMinutes = Math.max(1, reminderLookbackMinutes);
+        this.couponClaimTimeout = Duration.ofMinutes(Math.max(1, couponClaimMinutes));
     }
 
     @Scheduled(fixedDelayString = "${moaday.automation.interval-ms:60000}",
@@ -61,6 +69,29 @@ public class ScheduledAutomationService {
         sendEventRemindersAt(Instant.now());
     }
 
+    @Scheduled(fixedDelayString = "${moaday.automation.interval-ms:60000}",
+            initialDelayString = "${moaday.automation.initial-delay-ms:30000}")
+    @Transactional
+    public void releaseCouponClaims() {
+        releaseCouponClaimsAt(Instant.now());
+    }
+
+    public int releaseCouponClaimsAt(Instant now) {
+        var released = 0;
+        for (var coupon : coupons.findByStatusAndClaimedAtLessThanEqual(
+                CouponStatus.CLAIMED, now.minus(couponClaimTimeout))) {
+            var claimant = coupon.getClaimedBy();
+            if (!coupon.releaseClaimIfTimedOut(now, couponClaimTimeout)) continue;
+            released++;
+            audits.recordAt(coupon.getSpaceId(), null, "COUPON_AUTO_RELEASED", "COUPON", coupon.getId(),
+                    coupon.getTitle() + " 쿠폰 선점 시간 만료", null, now);
+            if (claimant != null) notifications.notifyUser(claimant, coupon.getSpaceId(), "COUPON_AUTO_RELEASED",
+                    "쿠폰 선점 자동 해제", coupon.getTitle() + " 쿠폰의 15분 선점 시간이 끝났습니다.",
+                    "/coupons/" + coupon.getId());
+        }
+        return released;
+    }
+
     public int expireCouponsAt(Instant now) {
         var expired = 0;
         for (var coupon : coupons.findByStatusInAndExpiresAtLessThanEqual(
@@ -68,6 +99,8 @@ public class ScheduledAutomationService {
             var claimant = coupon.getClaimedBy();
             if (!coupon.expireIfNeeded(now)) continue;
             expired++;
+            audits.recordAt(coupon.getSpaceId(), null, "COUPON_EXPIRED", "COUPON", coupon.getId(),
+                    coupon.getTitle() + " 쿠폰 만료", null, now);
             notifications.notifyUser(coupon.getOwnerId(), coupon.getSpaceId(), "COUPON_EXPIRED",
                     "쿠폰 만료", coupon.getTitle() + " 쿠폰이 만료되었습니다.", "/coupons/" + coupon.getId());
             if (claimant != null && !claimant.equals(coupon.getOwnerId())) {

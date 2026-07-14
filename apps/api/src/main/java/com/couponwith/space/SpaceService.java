@@ -1,5 +1,6 @@
 package com.couponwith.space;
 
+import com.couponwith.audit.AuditService;
 import com.couponwith.common.ApiException;
 import com.couponwith.identity.UserRepository;
 import org.springframework.http.HttpStatus;
@@ -23,14 +24,16 @@ public class SpaceService {
     private final SpaceMemberRepository members;
     private final InvitationRepository invitations;
     private final UserRepository users;
+    private final AuditService audits;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public SpaceService(SpaceRepository spaces, SpaceMemberRepository members,
-                        InvitationRepository invitations, UserRepository users) {
+                        InvitationRepository invitations, UserRepository users, AuditService audits) {
         this.spaces = spaces;
         this.members = members;
         this.invitations = invitations;
         this.users = users;
+        this.audits = audits;
     }
 
     @Transactional(readOnly = true)
@@ -126,8 +129,11 @@ public class SpaceService {
         if (actor.getRole() == SpaceRole.ADMIN && role == SpaceRole.ADMIN) {
             throw new ApiException(HttpStatus.FORBIDDEN, "ADMIN_PROMOTION_NOT_ALLOWED", "관리자 지정은 소유자만 할 수 있습니다.");
         }
+        var previousRole=target.getRole();
         target.changeRole(role);
         var user = requireUser(memberUserId);
+        audits.record(spaceId,actorId,"MEMBER_ROLE_CHANGED","MEMBER",memberUserId,
+                user.getDisplayName()+" 역할 변경: "+previousRole+" → "+role,null);
         return new MemberView(user.getId(), user.getDisplayName(), user.getEmail(), target.getRole(),
                 target.getJoinedAt(), false);
     }
@@ -137,7 +143,41 @@ public class SpaceService {
         var actor = requireManager(spaceId, actorId);
         var target = requireMembership(spaceId, memberUserId);
         validateMemberMutation(actorId, actor, memberUserId, target);
+        var user=requireUser(memberUserId);
         target.remove();
+        audits.record(spaceId,actorId,"MEMBER_REMOVED","MEMBER",memberUserId,user.getDisplayName()+" 구성원 추방",null);
+    }
+
+    @Transactional
+    public void leave(UUID userId, UUID spaceId) {
+        var space = requireSpace(spaceId);
+        var membership = requireMembership(spaceId, userId);
+        if (space.getType() == SpaceType.PERSONAL) {
+            throw new ApiException(HttpStatus.CONFLICT, "PERSONAL_SPACE_REQUIRED", "개인 공간에서는 탈퇴할 수 없습니다.");
+        }
+        if (membership.getRole() == SpaceRole.OWNER) {
+            throw new ApiException(HttpStatus.CONFLICT, "OWNER_CANNOT_LEAVE", "공간 소유자는 공간을 삭제하거나 소유권을 이전해야 합니다.");
+        }
+        membership.remove();
+        audits.record(spaceId,userId,"MEMBER_LEFT","MEMBER",userId,"구성원 자진 탈퇴",null);
+    }
+
+    @Transactional
+    public void archive(UUID actorId, UUID spaceId) {
+        var space = requireSpace(spaceId);
+        var membership = requireMembership(spaceId, actorId);
+        if (space.getType() == SpaceType.PERSONAL) {
+            throw new ApiException(HttpStatus.CONFLICT, "PERSONAL_SPACE_REQUIRED", "개인 공간은 삭제할 수 없습니다.");
+        }
+        if (membership.getRole() != SpaceRole.OWNER) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "SPACE_DELETE_NOT_ALLOWED", "공간 소유자만 공간을 삭제할 수 있습니다.");
+        }
+        audits.record(spaceId,actorId,"SPACE_ARCHIVED","SPACE",spaceId,space.getName()+" 공간 삭제",null);
+        invitations.findBySpaceIdOrderByCreatedAtDesc(spaceId).stream()
+                .filter(Invitation::isActive)
+                .forEach(Invitation::revoke);
+        members.findBySpaceIdAndStatusOrderByJoinedAt(spaceId, "ACTIVE").forEach(SpaceMember::remove);
+        space.archive();
     }
 
     @Transactional(readOnly = true)
@@ -183,6 +223,11 @@ public class SpaceService {
 
     private SpaceMember requireMembership(UUID spaceId, UUID userId) {
         return members.findBySpaceIdAndUserIdAndStatus(spaceId, userId, "ACTIVE")
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "SPACE_NOT_FOUND", "공간을 찾을 수 없습니다."));
+    }
+
+    private Space requireSpace(UUID spaceId) {
+        return spaces.findById(spaceId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "SPACE_NOT_FOUND", "공간을 찾을 수 없습니다."));
     }
 

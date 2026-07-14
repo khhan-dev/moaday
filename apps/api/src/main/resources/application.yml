@@ -47,6 +47,8 @@ couponwith:
 moaday:
   storage:
     path: ${STORAGE_PATH:./data/uploads}
+  coupons:
+    claim-minutes: ${COUPON_CLAIM_MINUTES:15}
   automation:
     interval-ms: ${AUTOMATION_INTERVAL_MS:60000}
     initial-delay-ms: ${AUTOMATION_INITIAL_DELAY_MS:30000}

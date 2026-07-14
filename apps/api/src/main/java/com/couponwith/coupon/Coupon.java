@@ -2,6 +2,7 @@ package com.couponwith.coupon;
 
 import jakarta.persistence.*;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.UUID;
 
 @Entity @Table(name="coupons")
@@ -29,6 +30,8 @@ public class Coupon {
     public void claim(UUID userId){this.status=CouponStatus.CLAIMED;this.claimedBy=userId;this.claimedAt=Instant.now();this.updatedAt=Instant.now();}
     public void release(){this.status=CouponStatus.AVAILABLE;this.claimedBy=null;this.claimedAt=null;this.updatedAt=Instant.now();}
     public void use(UUID userId){this.status=CouponStatus.USED;this.usedBy=userId;this.usedAt=Instant.now();this.updatedAt=Instant.now();}
+    public boolean releaseClaimIfTimedOut(Instant now,Duration timeout){if(status!=CouponStatus.CLAIMED||claimedAt==null||claimedAt.plus(timeout).isAfter(now)||!expiresAt.isAfter(now))return false;release();this.updatedAt=now;return true;}
+    public void correct(CouponStatus target,UUID actorId,Instant now){this.status=target;if(target==CouponStatus.AVAILABLE){this.claimedBy=null;this.claimedAt=null;this.usedBy=null;this.usedAt=null;}else if(target==CouponStatus.USED){this.claimedBy=null;this.claimedAt=null;this.usedBy=actorId;this.usedAt=now;}else if(target==CouponStatus.EXPIRED){this.claimedBy=null;this.claimedAt=null;this.usedBy=null;this.usedAt=null;}this.updatedAt=now;}
     public boolean expireIfNeeded(){return expireIfNeeded(Instant.now());}
     public boolean expireIfNeeded(Instant now){if((status==CouponStatus.AVAILABLE||status==CouponStatus.CLAIMED)&&!expiresAt.isAfter(now)){status=CouponStatus.EXPIRED;updatedAt=now;return true;}return false;}
     public UUID getId(){return id;} public UUID getSpaceId(){return spaceId;} public UUID getOwnerId(){return ownerId;} public String getTitle(){return title;} public String getBrand(){return brand;} public String getDescription(){return description;}

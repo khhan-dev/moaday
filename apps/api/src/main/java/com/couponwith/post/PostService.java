@@ -1,5 +1,6 @@
 package com.couponwith.post;
 
+import com.couponwith.audit.AuditService;
 import com.couponwith.common.ApiException;
 import com.couponwith.identity.UserRepository;
 import com.couponwith.notification.NotificationService;
@@ -25,9 +26,10 @@ public class PostService {
     private final PostAttachmentRepository attachments; private final SpaceMemberRepository members; private final UserRepository users;
     private final AttachmentStorage storage;
     private final NotificationService notifications;
+    private final AuditService audits;
     public PostService(SharedPostRepository posts, PostTagRepository tags, PostCommentRepository comments,
-                       PostAttachmentRepository attachments, SpaceMemberRepository members, UserRepository users, AttachmentStorage storage, NotificationService notifications) {
-        this.posts=posts;this.tags=tags;this.comments=comments;this.attachments=attachments;this.members=members;this.users=users;this.storage=storage;this.notifications=notifications;
+                       PostAttachmentRepository attachments, SpaceMemberRepository members, UserRepository users, AttachmentStorage storage, NotificationService notifications, AuditService audits) {
+        this.posts=posts;this.tags=tags;this.comments=comments;this.attachments=attachments;this.members=members;this.users=users;this.storage=storage;this.notifications=notifications;this.audits=audits;
     }
 
     @Transactional(readOnly = true)
@@ -81,9 +83,10 @@ public class PostService {
         return AttachmentView.from(attachment);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public Download download(UUID actorId, UUID attachmentId) {
         var attachment=requireAttachment(attachmentId); var post=requirePost(attachment.getPostId()); requireMembership(post.getSpaceId(),actorId);
+        audits.record(post.getSpaceId(),actorId,"FILE_DOWNLOADED","ATTACHMENT",attachmentId,attachment.getOriginalName()+" 파일 열람",null);
         return new Download(attachment.getOriginalName(),attachment.getContentType(),storage.load(attachment.getStorageKey()));
     }
 

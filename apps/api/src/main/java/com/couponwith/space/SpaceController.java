@@ -72,6 +72,18 @@ public class SpaceController {
         spaceService.removeMember(userId(jwt), spaceId, memberUserId);
     }
 
+    @DeleteMapping("/spaces/{spaceId}/membership")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void leaveSpace(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID spaceId) {
+        spaceService.leave(userId(jwt), spaceId);
+    }
+
+    @DeleteMapping("/spaces/{spaceId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void archiveSpace(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID spaceId) {
+        spaceService.archive(userId(jwt), spaceId);
+    }
+
     @GetMapping("/spaces/{spaceId}/invitations")
     List<SpaceService.InvitationSummaryView> listInvitations(@AuthenticationPrincipal Jwt jwt,
                                                              @PathVariable UUID spaceId) {

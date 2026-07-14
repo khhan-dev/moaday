@@ -106,4 +106,26 @@ class StageOneIntegrationTest {
         assertThat(spaceService.invite(owner.user().id(), family.id(), "expired@example.com", SpaceRole.MEMBER))
                 .isNotNull();
     }
+
+    @Test
+    void memberCanLeaveAndOnlyOwnerCanArchiveGroupSpace() {
+        var owner = authService.register("lifecycle-owner@example.com", "password123!", "소유자", "Asia/Seoul");
+        var member = authService.register("lifecycle-member@example.com", "password123!", "멤버", "Asia/Seoul");
+        var family = spaceService.create(owner.user().id(), SpaceType.FAMILY, "정리할 가족", "Asia/Seoul", "orange");
+        var invitation = spaceService.invite(owner.user().id(), family.id(), member.user().email(), SpaceRole.MEMBER);
+        spaceService.accept(member.user().id(), invitation.oneTimeToken());
+
+        assertThatThrownBy(() -> spaceService.leave(owner.user().id(), family.id()))
+                .hasMessageContaining("소유자");
+        assertThatThrownBy(() -> spaceService.archive(member.user().id(), family.id()))
+                .hasMessageContaining("소유자만");
+
+        spaceService.leave(member.user().id(), family.id());
+        assertThat(spaceService.list(member.user().id())).extracting(SpaceService.SpaceView::type)
+                .containsExactly(SpaceType.PERSONAL);
+
+        spaceService.archive(owner.user().id(), family.id());
+        assertThat(spaceService.list(owner.user().id())).extracting(SpaceService.SpaceView::type)
+                .containsExactly(SpaceType.PERSONAL);
+    }
 }
