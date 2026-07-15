@@ -398,6 +398,15 @@ sequenceDiagram
 
 `scripts/e2e-smoke.mjs`는 OWNER, MEMBER, VIEWER 계정을 만들고 초대, 역할, 글, 일정, ICS, 연결 자료, 쿠폰 선점·사용, 검색, 감사 로그, 탈퇴·삭제를 검증한 뒤 DB 테스트 데이터를 정리합니다.
 
+### GitHub Actions CI
+
+`.github/workflows/ci.yml`은 `main` 푸시와 Pull Request에서 비밀정보, API, 웹, Docker 검사를 병렬로 실행합니다. 모든 작업은 저장소 읽기 권한만 사용하고, 동일 브랜치의 이전 실행은 새 커밋이 올라오면 취소합니다.
+
+- Gitleaks는 전체 Git 이력을 검사하고 `scripts/check-sensitive-files.ps1`은 추적 중인 환경 파일·개인키·자격 증명 파일과 예시가 아닌 이메일 주소를 차단합니다. `.gitleaks.toml`은 격리된 API 테스트 프로필의 고정 테스트 JWT 문자열만 파일·값을 함께 지정해 예외 처리합니다.
+- API는 Java 21과 Maven 의존성 캐시로 `verify`를 실행합니다.
+- 웹은 Node.js 22와 잠금 파일 기반 `npm ci` 후 lint, build, 렌더링 테스트를 실행합니다.
+- Docker는 Compose 설정과 API·웹 이미지 빌드를 검증합니다.
+
 ## 14. 구성과 포트
 
 | 항목 | 값 |
@@ -419,4 +428,4 @@ sequenceDiagram
 2. 목록 API를 서버 페이지네이션으로 변경합니다.
 3. 첨부파일을 S3 호환 저장소와 악성코드 검사 파이프라인으로 확장합니다.
 4. JWT 키를 Secret Manager로 이동하고 refresh token 또는 안전한 쿠키 세션을 검토합니다.
-5. CI에서 API·웹·E2E·컨테이너 취약점 검사를 자동화합니다.
+5. 현재 CI에 E2E 스모크와 컨테이너·의존성 취약점 검사를 추가합니다.

@@ -276,3 +276,34 @@ git diff --check
 - `.env`, 백업 파일, 로그, 빌드 결과물이 추적되지 않아야 합니다.
 - 문서와 `.env.example`에는 예시 값만 있어야 합니다.
 - `mvn test`, `npm test`, `node scripts/e2e-smoke.mjs`가 통과하는지 확인합니다.
+
+## 14. GitHub Actions CI
+
+`.github/workflows/ci.yml`은 `main` 브랜치 푸시, `main` 대상 Pull Request와 수동 실행에서 동작합니다. 네 작업은 병렬 실행되며 GitHub 커밋과 Pull Request에 각각 상태 검사로 표시됩니다.
+
+| 상태 검사 | 검증 내용 |
+| --- | --- |
+| `Secrets scan` | 금지 파일·개인 이메일 검사, 전체 Git 이력 Gitleaks 검사 |
+| `API tests (Java 21)` | Maven `verify`, API 단위·통합 테스트 |
+| `Web lint, test and build (Node 22)` | 의존성 고정 설치, ESLint, 프로덕션 빌드, 렌더링 테스트 |
+| `Docker build` | Compose 문법, API·웹 Docker 이미지 빌드 |
+
+CI에는 Gmail이나 운영 DB 자격 증명을 등록하지 않습니다. API 테스트는 테스트 프로필을, Docker 빌드는 Compose의 안전한 로컬 기본값을 사용합니다.
+
+로컬 사전 검사는 프로젝트 루트에서 실행합니다.
+
+```powershell
+.\scripts\check-sensitive-files.ps1
+cd apps\api
+mvn --batch-mode --no-transfer-progress verify
+cd ..\web
+npm ci
+npm run lint
+npm run build
+npm run test:render
+cd ..\..
+docker compose config --quiet
+docker compose build api web
+```
+
+GitHub 저장소의 `Settings > Branches` 또는 Rulesets에서 `main` 보호 규칙을 만들고 위 네 상태 검사를 필수로 지정하면, 검사가 실패하거나 진행 중인 Pull Request는 병합할 수 없습니다. 직접 `main`에 푸시하는 방식까지 제한하려면 해당 규칙에서 Pull Request를 통한 변경을 요구해야 합니다.

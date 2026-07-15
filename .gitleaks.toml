@@ -1,0 +1,14 @@
+title = "MoaDay Gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+  [[rules.allowlists]]
+  description = "Allow the explicit JWT key used only by the isolated API test profile"
+  condition = "AND"
+  regexTarget = "secret"
+  regexes = ['''^test-secret-must-be-at-least-thirty-two-bytes-long-for-hs256$''']
+  paths = ['''(^|/)apps/api/src/test/resources/application\.yml$''']

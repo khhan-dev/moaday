@@ -1,5 +1,7 @@
 # MoaDay
 
+[![CI](https://github.com/khhan-dev/moaday/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/khhan-dev/moaday/actions/workflows/ci.yml)
+
 가족과 친구의 일정, 공유 자료, 모바일 쿠폰을 한 공간에서 관리하는 SaaS 프로젝트입니다.
 
 ![MoaDay - 가족과 친구의 일정·자료·쿠폰을 한곳에](apps/web/public/og.png)
@@ -85,6 +87,23 @@ docker compose up --build -d
 apps/web  React 기반 Vinext 웹/PWA
 apps/api  Spring Boot API
 docs      제품·PRD·기술 설계
+```
+
+## 지속적 통합(CI)
+
+GitHub Actions는 `main` 푸시와 `main` 대상 Pull Request마다 다음 검사를 병렬로 실행합니다.
+
+- `Secrets scan`: 금지된 환경·개인키 파일과 실제 개인 이메일을 검사하고 Gitleaks로 전체 Git 이력을 스캔 (`.gitleaks.toml`은 격리된 테스트 프로필의 명시적 테스트 키 1개만 허용)
+- `API tests (Java 21)`: Maven `verify`로 API 단위·통합 테스트 실행
+- `Web lint, test and build (Node 22)`: ESLint, 프로덕션 빌드와 렌더링 테스트 실행
+- `Docker build`: Compose 설정을 검증하고 API·웹 이미지를 실제 빌드
+
+동일 브랜치에 새 커밋이 올라오면 이전 실행은 자동 취소됩니다. CI는 저장소 읽기 권한만 사용하며 로컬 `.env`나 Gmail SMTP 자격 증명을 전달하지 않습니다. GitHub의 브랜치 보호 규칙에서 위 네 상태 검사를 필수로 지정하면 실패한 Pull Request의 병합을 차단할 수 있습니다.
+
+로컬에서 개인정보 파일 검사를 먼저 실행할 수 있습니다.
+
+```powershell
+.\scripts\check-sensitive-files.ps1
 ```
 
 ## Docker로 로컬 실행
