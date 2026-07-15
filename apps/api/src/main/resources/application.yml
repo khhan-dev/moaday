@@ -57,6 +57,7 @@ couponwith:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
 
 moaday:
+  web-base-url: ${MOADAY_WEB_BASE_URL:http://localhost:3000}
   mail:
     from: ${MAIL_FROM:no-reply@moaday.local}
   storage:

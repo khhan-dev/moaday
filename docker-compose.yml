@@ -40,6 +40,7 @@ services:
       MAIL_READ_TIMEOUT_MS: ${MAIL_READ_TIMEOUT_MS:-10000}
       MAIL_WRITE_TIMEOUT_MS: ${MAIL_WRITE_TIMEOUT_MS:-10000}
       MAIL_FROM: ${MAIL_FROM:-no-reply@moaday.local}
+      MOADAY_WEB_BASE_URL: ${MOADAY_WEB_BASE_URL:-http://localhost:3000}
       COUPON_CLAIM_MINUTES: ${COUPON_CLAIM_MINUTES:-15}
     ports:
       - "8080:8080"

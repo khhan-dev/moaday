@@ -79,6 +79,7 @@ Copy-Item .env.example .env
 | `MAIL_STARTTLS_ENABLED` | `false` | STARTTLS 사용 여부 |
 | `MAIL_STARTTLS_REQUIRED` | `false` | STARTTLS 필수 여부 |
 | `MAIL_FROM` | `no-reply@moaday.local` | 발신 주소 |
+| `MOADAY_WEB_BASE_URL` | `http://localhost:3000` | 활동 알림 메일의 상세 화면 링크 기준 주소 |
 
 공개 저장소에는 실제 비밀번호, JWT 키, SMTP 앱 비밀번호를 절대 커밋하지 않습니다.
 
@@ -100,6 +101,7 @@ MAIL_CONNECTION_TIMEOUT_MS=10000
 MAIL_READ_TIMEOUT_MS=10000
 MAIL_WRITE_TIMEOUT_MS=10000
 MAIL_FROM=your-account@gmail.com
+MOADAY_WEB_BASE_URL=http://localhost:3000
 ```
 
 설정을 변경한 후 API 컨테이너를 재생성합니다.
@@ -108,7 +110,7 @@ MAIL_FROM=your-account@gmail.com
 docker compose up -d --build --force-recreate api web gateway
 ```
 
-새 공간 초대를 생성하면 수신자에게 메일 발송을 시도합니다. 이미 생성된 초대는 자동 재발송되지 않습니다.
+새 공간 초대를 생성하거나 이메일 알림을 켠 사용자의 일정·공유글·쿠폰 활동 알림이 발생하면 수신자에게 메일 발송을 시도합니다. 활동 알림에는 `MOADAY_WEB_BASE_URL` 기준의 상세 화면 링크가 포함됩니다. 터널을 사용할 때 외부 기기에서 링크를 열려면 이 값을 현재 HTTPS 터널 주소로 설정하고 API를 재생성합니다. 이미 생성된 초대는 자동 재발송되지 않습니다.
 
 ## 7. 서비스 관리
 

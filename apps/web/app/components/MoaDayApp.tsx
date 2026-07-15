@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api, AuditEntry, AuthResult, DashboardData, Invitation, InvitationSummary, ReceivedInvitation, SearchResult, Space, SpaceMember, SpaceRole, SpaceType } from "../lib/api";
 import styles from "./CouponWithApp.module.css";
 import { CalendarView } from "./CalendarView";
@@ -8,6 +8,7 @@ import { SharedView } from "./SharedView";
 import { CouponView } from "./CouponView";
 import { SettingsView } from "./SettingsView";
 import { ModalPortal } from "./ModalPortal";
+import { DetailTarget, targetFromUrl, viewForDetail, writeDetailUrl } from "../lib/detail-navigation";
 
 type View = "today" | "calendar" | "posts" | "coupons" | "spaces" | "settings";
 const SESSION_KEY = "moaday.auth.v1";
@@ -39,8 +40,9 @@ export function MoaDayApp() {
   const [sessionChecked,setSessionChecked]=useState(false);
   const [inviteToken,setInviteToken]=useState("");
   const [receivedInvitations,setReceivedInvitations]=useState<ReceivedInvitation[]>([]);
+  const [detailTarget,setDetailTarget]=useState<DetailTarget|null>(null);
 
-  useEffect(()=>{let active=true;async function restore(){await Promise.resolve();const url=new URL(window.location.href);const queryToken=url.searchParams.get("invite")??"";if(active)setInviteToken(queryToken);const saved=window.localStorage.getItem(SESSION_KEY);if(!saved){if(active)setSessionChecked(true);return}try{const restored=JSON.parse(saved) as AuthResult;if(new Date(restored.expiresAt).getTime()<=Date.now())throw new Error("expired");const loadedSpaces=await api.listSpaces(restored.accessToken);if(active){setSession(restored);setSpaces(loadedSpaces)}}catch{window.localStorage.removeItem(SESSION_KEY)}finally{if(active)setSessionChecked(true)}}void restore();return()=>{active=false}},[]);
+  useEffect(()=>{let active=true;async function restore(){await Promise.resolve();const url=new URL(window.location.href);const queryToken=url.searchParams.get("invite")??"";const target=targetFromUrl(url);if(active){setInviteToken(queryToken);setDetailTarget(target);if(target)setView(viewForDetail(target.type))}const saved=window.localStorage.getItem(SESSION_KEY);if(!saved){if(active)setSessionChecked(true);return}try{const restored=JSON.parse(saved) as AuthResult;if(new Date(restored.expiresAt).getTime()<=Date.now())throw new Error("expired");const loadedSpaces=await api.listSpaces(restored.accessToken);if(active){setSession(restored);setSpaces(loadedSpaces)}}catch{window.localStorage.removeItem(SESSION_KEY)}finally{if(active)setSessionChecked(true)}}void restore();return()=>{active=false}},[]);
 
   useEffect(() => {
     if (!session) return;
@@ -72,6 +74,9 @@ export function MoaDayApp() {
   const logout=()=>{window.localStorage.removeItem(SESSION_KEY);setSession(null);setSpaces([]);setUnreadCount(0);setReceivedInvitations([]);setView("today")};
   const exitCurrent=()=>{if(isDemo){setIsDemo(false);setSpaces([]);setUnreadCount(0);setReceivedInvitations([]);setView("today")}else logout()};
   const clearInvitation=()=>{setInviteToken("");const url=new URL(window.location.href);url.searchParams.delete("invite");window.history.replaceState({},"",`${url.pathname}${url.search}${url.hash}`)};
+  const navigate=useCallback((nextView:View,target:DetailTarget|null=null)=>{setView(nextView);setDetailTarget(target);writeDetailUrl(target)},[]);
+  const openTarget=useCallback((target:DetailTarget)=>navigate(viewForDetail(target.type),target),[navigate]);
+  const clearTarget=useCallback(()=>{setDetailTarget(null);writeDetailUrl(null)},[]);
   const acceptReceived=async(invitation:ReceivedInvitation)=>{const space=await api.acceptReceivedInvitation(session!.accessToken,invitation.id);setSpaces(current=>current.some(item=>item.id===space.id)?current:[...current,space]);setReceivedInvitations(current=>current.filter(item=>item.id!==invitation.id));setView("spaces")};
   const declineReceived=async(invitation:ReceivedInvitation)=>{await api.declineReceivedInvitation(session!.accessToken,invitation.id);setReceivedInvitations(current=>current.filter(item=>item.id!==invitation.id))};
 
@@ -88,7 +93,7 @@ export function MoaDayApp() {
         <Brand />
         <nav aria-label="주요 메뉴" className={styles.sideNav}>
           {navigation.map((item) => (
-            <button key={item.id} type="button" className={view === item.id ? styles.navActive : styles.navButton} onClick={() => setView(item.id)}>
+            <button key={item.id} type="button" className={view === item.id ? styles.navActive : styles.navButton} onClick={() => navigate(item.id)}>
               <span aria-hidden="true">{item.mark}</span>{item.label}{item.id === "spaces" && receivedInvitations.length > 0 && <b className={styles.navBadge}>{Math.min(receivedInvitations.length,99)}</b>}{item.id === "settings" && unreadCount > 0 && <b className={styles.navBadge}>{Math.min(unreadCount, 99)}</b>}
             </button>
           ))}
@@ -99,24 +104,24 @@ export function MoaDayApp() {
       <main className={styles.main}>
         <header className={styles.topbar}>
           <div><p className={styles.eyebrow}>{view === "today" ? new Date().toLocaleDateString("ko-KR", { year:"numeric", month:"long", day:"numeric", weekday:"long" }) : "우리의 생활을 한곳에"}</p><h1>{navigation.find((item) => item.id === view)?.label}</h1></div>
-          <div className={styles.topActions}><button type="button" className={styles.iconButton} aria-label="통합검색" onClick={() => setSearchOpen(true)}>⌕</button><button type="button" className={styles.iconButton} aria-label={`알림 보기${unreadCount ? `, 읽지 않은 알림 ${unreadCount}개` : ""}`} onClick={() => setView("settings")}>♢{unreadCount > 0 && <b>{Math.min(unreadCount,99)}</b>}</button><button type="button" className={styles.primaryButton} onClick={() => setView(view === "spaces" ? "spaces" : "calendar")}>＋ {view === "spaces" ? "공간 만들기" : "일정 추가"}</button></div>
+          <div className={styles.topActions}><button type="button" className={styles.iconButton} aria-label="통합검색" onClick={() => setSearchOpen(true)}>⌕</button><button type="button" className={styles.iconButton} aria-label={`알림 보기${unreadCount ? `, 읽지 않은 알림 ${unreadCount}개` : ""}`} onClick={() => navigate("settings")}>♢{unreadCount > 0 && <b>{Math.min(unreadCount,99)}</b>}</button><button type="button" className={styles.primaryButton} onClick={() => navigate(view === "spaces" ? "spaces" : "calendar")}>＋ {view === "spaces" ? "공간 만들기" : "일정 추가"}</button></div>
         </header>
 
         {receivedInvitations.length>0&&<ReceivedInvitationsPanel invitations={receivedInvitations} onAccept={acceptReceived} onDecline={declineReceived}/>}
 
-        {view === "today" && <TodayView session={session} demo={isDemo} onNavigate={setView} />}
-        {view === "calendar" && <CalendarView spaces={spaces} session={session} demo={isDemo} />}
-        {view === "posts" && <SharedView spaces={spaces} session={session} demo={isDemo} />}
-        {view === "coupons" && <CouponView spaces={spaces} session={session} demo={isDemo} />}
+        {view === "today" && <TodayView session={session} demo={isDemo} onNavigate={navigate} onOpenTarget={openTarget} />}
+        {view === "calendar" && <CalendarView spaces={spaces} session={session} demo={isDemo} target={detailTarget?.type==="EVENT"?detailTarget:null} onTargetClose={clearTarget} onOpenResource={openTarget} />}
+        {view === "posts" && <SharedView spaces={spaces} session={session} demo={isDemo} target={detailTarget?.type==="POST"?detailTarget:null} onTargetClose={clearTarget} />}
+        {view === "coupons" && <CouponView spaces={spaces} session={session} demo={isDemo} target={detailTarget?.type==="COUPON"?detailTarget:null} onTargetClose={clearTarget} />}
         {view === "spaces" && <SpacesView spaces={spaces} session={session} demo={isDemo} onSpacesChange={setSpaces} />}
-        {view === "settings" && <SettingsView session={session} demo={isDemo} onSessionChange={saveSession} onUnreadChange={setUnreadCount} onLogout={exitCurrent} onDeleted={() => { window.localStorage.removeItem(SESSION_KEY); setSession(null); setIsDemo(false); setSpaces([]); setUnreadCount(0); setView("today"); }} />}
+        {view === "settings" && <SettingsView session={session} demo={isDemo} onSessionChange={saveSession} onUnreadChange={setUnreadCount} onOpenTarget={openTarget} onLogout={exitCurrent} onDeleted={() => { window.localStorage.removeItem(SESSION_KEY); setSession(null); setIsDemo(false); setSpaces([]); setUnreadCount(0); setView("today"); }} />}
       </main>
 
-      {searchOpen && <SearchModal session={session} demo={isDemo} onClose={() => setSearchOpen(false)} onSelect={(target) => { setView(target); setSearchOpen(false); }} />}
+      {searchOpen && <SearchModal session={session} demo={isDemo} onClose={() => setSearchOpen(false)} onSelect={(result) => { openTarget({type:result.type,id:result.id,spaceId:result.spaceId}); setSearchOpen(false); }} />}
       {inviteToken&&session&&<InvitationAcceptance token={inviteToken} session={session} onClose={clearInvitation} onAccepted={(space)=>{setSpaces(current=>current.some(item=>item.id===space.id)?current:[...current,space]);setReceivedInvitations(current=>current.filter(item=>item.spaceId!==space.id));clearInvitation();setView("spaces")}}/>}
 
       <nav className={styles.bottomNav} aria-label="모바일 주요 메뉴">
-        {navigation.map((item) => <button type="button" key={item.id} aria-current={view === item.id ? "page" : undefined} onClick={() => setView(item.id)}><span aria-hidden="true">{item.mark}</span>{item.label}</button>)}
+        {navigation.map((item) => <button type="button" key={item.id} aria-current={view === item.id ? "page" : undefined} onClick={() => navigate(item.id)}><span aria-hidden="true">{item.mark}</span>{item.label}</button>)}
       </nav>
     </div>
   );
@@ -130,11 +135,11 @@ function Brand() {
   return <div className={styles.brand}><span className={styles.brandMark}>M</span><span>MoaDay</span></div>;
 }
 
-function SearchModal({ session, demo, onClose, onSelect }: { session: AuthResult | null; demo: boolean; onClose: () => void; onSelect: (view: View) => void }) {
+function SearchModal({ session, demo, onClose, onSelect }: { session: AuthResult | null; demo: boolean; onClose: () => void; onSelect: (result: SearchResult) => void }) {
   const [query,setQuery]=useState(""); const [results,setResults]=useState<SearchResult[]>([]); const [loading,setLoading]=useState(false); const [error,setError]=useState("");
   useEffect(()=>{const value=query.trim();if(value.length<2)return;let active=true;const timer=window.setTimeout(async()=>{setLoading(true);setError("");try{const loaded=demo?demoSearch(value):await api.search(session!.accessToken,value);if(active)setResults(loaded)}catch(reason){if(active)setError(reason instanceof Error?reason.message:"검색하지 못했습니다.")}finally{if(active)setLoading(false)}},250);return()=>{active=false;window.clearTimeout(timer)}},[demo,query,session]);
   const labels={EVENT:"일정",POST:"공유글",COUPON:"쿠폰"};
-  return <ModalPortal><div className={styles.modalBackdrop}><div className={`${styles.modal} ${styles.searchModal}`} role="dialog" aria-modal="true" aria-labelledby="search-title"><button className={styles.closeButton} type="button" aria-label="닫기" onClick={onClose}>×</button><p className={styles.eyebrow}>모든 공간에서 찾기</p><h2 id="search-title">통합검색</h2><label className={styles.searchInput}><span aria-hidden="true">⌕</span><input autoFocus value={query} onChange={event=>{const value=event.target.value;setQuery(value);if(value.trim().length<2){setResults([]);setLoading(false);setError("")}}} maxLength={100} placeholder="일정, 공유글, 쿠폰을 검색하세요" aria-label="통합검색어"/></label>{query.trim().length<2&&<p className={styles.searchHint}>두 글자 이상 입력해 주세요.</p>}{loading&&<p className={styles.searchHint}>검색 중…</p>}{error&&<p className={styles.error}>{error}</p>}<div className={styles.searchResults}>{results.map(item=><button type="button" key={`${item.type}-${item.id}`} onClick={()=>onSelect(item.targetView)}><span data-type={item.type}>{labels[item.type]}</span><div><strong>{item.title}</strong><small>{item.spaceName} · {item.summary}</small></div>{item.occurredAt&&<time>{new Date(item.occurredAt).toLocaleDateString("ko-KR")}</time>}</button>)}</div>{query.trim().length>=2&&!loading&&results.length===0&&<p className={styles.empty}>검색 결과가 없습니다.</p>}</div></div></ModalPortal>;
+  return <ModalPortal><div className={styles.modalBackdrop}><div className={`${styles.modal} ${styles.searchModal}`} role="dialog" aria-modal="true" aria-labelledby="search-title"><button className={styles.closeButton} type="button" aria-label="닫기" onClick={onClose}>×</button><p className={styles.eyebrow}>모든 공간에서 찾기</p><h2 id="search-title">통합검색</h2><label className={styles.searchInput}><span aria-hidden="true">⌕</span><input autoFocus value={query} onChange={event=>{const value=event.target.value;setQuery(value);if(value.trim().length<2){setResults([]);setLoading(false);setError("")}}} maxLength={100} placeholder="일정, 공유글, 쿠폰을 검색하세요" aria-label="통합검색어"/></label>{query.trim().length<2&&<p className={styles.searchHint}>두 글자 이상 입력해 주세요.</p>}{loading&&<p className={styles.searchHint}>검색 중…</p>}{error&&<p className={styles.error}>{error}</p>}<div className={styles.searchResults}>{results.map(item=><button type="button" key={`${item.type}-${item.id}`} onClick={()=>onSelect(item)}><span data-type={item.type}>{labels[item.type]}</span><div><strong>{item.title}</strong><small>{item.spaceName} · {item.summary}</small></div>{item.occurredAt&&<time>{new Date(item.occurredAt).toLocaleDateString("ko-KR")}</time>}</button>)}</div>{query.trim().length>=2&&!loading&&results.length===0&&<p className={styles.empty}>검색 결과가 없습니다.</p>}</div></div></ModalPortal>;
 }
 
 function demoSearch(query:string):SearchResult[]{const values:SearchResult[]=[{type:"EVENT",id:"demo-event",spaceId:"family",spaceName:"우리 가족",title:"엄마 병원 진료",summary:"서울병원",occurredAt:new Date().toISOString(),targetView:"calendar"},{type:"POST",id:"demo-post",spaceId:"family",spaceName:"우리 가족",title:"여름휴가 준비물",summary:"여권, 충전기, 상비약",occurredAt:new Date().toISOString(),targetView:"posts"},{type:"COUPON",id:"demo-coupon",spaceId:"family",spaceName:"우리 가족",title:"아메리카노 쿠폰",summary:"Moa Cafe",occurredAt:new Date().toISOString(),targetView:"coupons"}];return values.filter(item=>`${item.title} ${item.summary}`.includes(query));}
@@ -198,7 +203,7 @@ function AuthScreen({ onAuthenticated, onDemo,invitePending }: { onAuthenticated
   );
 }
 
-function TodayView({session,demo,onNavigate}:{session:AuthResult|null;demo:boolean;onNavigate:(view:View)=>void}) {
+function TodayView({session,demo,onNavigate,onOpenTarget}:{session:AuthResult|null;demo:boolean;onNavigate:(view:View)=>void;onOpenTarget:(target:DetailTarget)=>void}) {
   const [dashboard,setDashboard]=useState<DashboardData|null>(null);const [error,setError]=useState("");
   const [referenceTime]=useState(()=>Date.now());
   useEffect(()=>{let active=true;async function load(){try{const result=demo?demoDashboard():await api.dashboard(session!.accessToken);if(active)setDashboard(result)}catch(reason){if(active)setError(reason instanceof Error?reason.message:"오늘 정보를 불러오지 못했습니다.")}}void load();return()=>{active=false}},[demo,session]);
@@ -209,16 +214,16 @@ function TodayView({session,demo,onNavigate}:{session:AuthResult|null;demo:boole
       <section className={styles.card}>
         <div className={styles.sectionHeader}><div><h2>다가오는 일정</h2><p>14일 안에 {dashboard.upcomingEventCount}개</p></div><button type="button" onClick={()=>onNavigate("calendar")}>전체 보기 →</button></div>
         <div className={styles.timeline}>
-          {dashboard.upcomingEvents.map((item,index)=><TimelineItem key={`${item.id}-${item.startsAt}`} time={item.allDay?"종일":new Date(item.startsAt).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})} title={item.title} meta={`${item.spaceName}${item.location?` · ${item.location}`:""}`} badge={attendanceLabel[item.attendance]??item.attendance} color={index%3===0?"orange":index%3===1?"green":"blue"} onClick={()=>onNavigate("calendar")}/>) }
+          {dashboard.upcomingEvents.map((item,index)=><TimelineItem key={`${item.id}-${item.startsAt}`} time={item.allDay?"종일":new Date(item.startsAt).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"})} title={item.title} meta={`${item.spaceName}${item.location?` · ${item.location}`:""}`} badge={attendanceLabel[item.attendance]??item.attendance} color={index%3===0?"orange":index%3===1?"green":"blue"} onClick={()=>onOpenTarget({type:"EVENT",id:item.id,spaceId:item.spaceId})}/>) }
           {dashboard.upcomingEvents.length===0&&<p className={styles.empty}>14일 안에 예정된 일정이 없습니다.</p>}
         </div>
       </section>
       <div className={styles.sideColumn}>
         <section className={styles.card}>
           <div className={styles.sectionHeader}><div><h2>만료 임박 쿠폰</h2><p>7일 안에 만료 {dashboard.expiringCouponCount}개</p></div><button type="button" onClick={()=>onNavigate("coupons")}>전체 보기 →</button></div>
-          <div className={styles.compactList}>{dashboard.expiringCoupons.map(item=><button type="button" key={item.id} onClick={()=>onNavigate("coupons")}><span>◇</span><p><strong>{item.title}</strong><small>{item.spaceName} · {item.brand}</small></p><b>D-{Math.max(0,Math.ceil((new Date(item.expiresAt).getTime()-referenceTime)/86400000))}</b></button>)}{dashboard.expiringCoupons.length===0&&<p className={styles.empty}>곧 만료되는 쿠폰이 없습니다.</p>}</div>
+          <div className={styles.compactList}>{dashboard.expiringCoupons.map(item=><button type="button" key={item.id} onClick={()=>onOpenTarget({type:"COUPON",id:item.id,spaceId:item.spaceId})}><span>◇</span><p><strong>{item.title}</strong><small>{item.spaceName} · {item.brand}</small></p><b>D-{Math.max(0,Math.ceil((new Date(item.expiresAt).getTime()-referenceTime)/86400000))}</b></button>)}{dashboard.expiringCoupons.length===0&&<p className={styles.empty}>곧 만료되는 쿠폰이 없습니다.</p>}</div>
         </section>
-        <section className={styles.card}><div className={styles.sectionHeader}><div><h2>최근 공유글</h2><p>모든 공간의 최신 소식</p></div><button type="button" onClick={()=>onNavigate("posts")}>전체 보기 →</button></div><div className={styles.dashboardPosts}>{dashboard.recentPosts.map(item=><button type="button" key={item.id} onClick={()=>onNavigate("posts")}><span>⌖</span><p><strong>{item.title}</strong><small>{item.spaceName} · 댓글 {item.commentCount} · 파일 {item.attachmentCount}</small></p></button>)}{dashboard.recentPosts.length===0&&<p className={styles.empty}>최근 공유글이 없습니다.</p>}</div></section>
+        <section className={styles.card}><div className={styles.sectionHeader}><div><h2>최근 공유글</h2><p>모든 공간의 최신 소식</p></div><button type="button" onClick={()=>onNavigate("posts")}>전체 보기 →</button></div><div className={styles.dashboardPosts}>{dashboard.recentPosts.map(item=><button type="button" key={item.id} onClick={()=>onOpenTarget({type:"POST",id:item.id,spaceId:item.spaceId})}><span>⌖</span><p><strong>{item.title}</strong><small>{item.spaceName} · 댓글 {item.commentCount} · 파일 {item.attachmentCount}</small></p></button>)}{dashboard.recentPosts.length===0&&<p className={styles.empty}>최근 공유글이 없습니다.</p>}</div></section>
       </div>
     </div></>
   );
@@ -228,7 +233,7 @@ function TimelineItem({ time, title, meta, badge, color,onClick }: { time: strin
   return <button type="button" className={styles.timelineItem} onClick={onClick}><time>{time}</time><span className={`${styles.eventLine} ${styles[color]}`} /><p><strong>{title}</strong><small>{meta}</small></p>{badge&&<em>{badge}</em>}</button>;
 }
 
-function demoDashboard():DashboardData{const now=new Date(),tomorrow=new Date(now.getTime()+86400000),couponDate=new Date(now.getTime()+2*86400000);return{spaceCount:3,unreadNotificationCount:1,upcomingEventCount:2,expiringCouponCount:1,upcomingEvents:[{id:"event-1",title:"엄마 병원 진료",location:"서울병원",startsAt:tomorrow.toISOString(),allDay:false,spaceId:"family",spaceName:"우리 가족",attendance:"ACCEPTED"},{id:"event-2",title:"친구들과 저녁",location:"우리 동네",startsAt:new Date(tomorrow.getTime()+8*3600000).toISOString(),allDay:false,spaceId:"friends",spaceName:"고등학교 친구들",attendance:"MAYBE"}],expiringCoupons:[{id:"coupon-1",title:"카페 아메리카노",brand:"Moa Cafe",expiresAt:couponDate.toISOString(),status:"AVAILABLE",spaceId:"family",spaceName:"우리 가족"}],recentPosts:[{id:"post-1",title:"여름휴가 준비물",excerpt:"여권과 충전기를 확인해 주세요.",updatedAt:now.toISOString(),commentCount:3,attachmentCount:2,spaceId:"family",spaceName:"우리 가족"}]}}
+function demoDashboard():DashboardData{const now=new Date(),tomorrow=new Date(now.getTime()+86400000),couponDate=new Date(now.getTime()+2*86400000);return{spaceCount:3,unreadNotificationCount:1,upcomingEventCount:1,expiringCouponCount:1,upcomingEvents:[{id:"demo-event",title:"함께 저녁 먹기",location:"우리 동네",startsAt:tomorrow.toISOString(),allDay:false,spaceId:"family",spaceName:"우리 가족",attendance:"ACCEPTED"}],expiringCoupons:[{id:"demo-coupon",title:"아메리카노 한 잔",brand:"Moa Cafe",expiresAt:couponDate.toISOString(),status:"AVAILABLE",spaceId:"family",spaceName:"우리 가족"}],recentPosts:[{id:"demo-post",title:"여름휴가 준비물",excerpt:"여권과 충전기를 확인해 주세요.",updatedAt:now.toISOString(),commentCount:3,attachmentCount:2,spaceId:"family",spaceName:"우리 가족"}]}}
 
 function SpacesView({ spaces, session, demo, onSpacesChange }: { spaces: Space[]; session: AuthResult | null; demo: boolean; onSpacesChange: (spaces: Space[]) => void }) {
   const [showCreate, setShowCreate] = useState(false);

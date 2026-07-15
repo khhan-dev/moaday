@@ -7,6 +7,7 @@ import {
 } from "../lib/api";
 import styles from "./CouponWithApp.module.css";
 import { ModalPortal } from "./ModalPortal";
+import { DetailTarget } from "../lib/detail-navigation";
 
 type CalendarMode = "month" | "week" | "day";
 
@@ -74,8 +75,9 @@ function newEventTimes(day: Date) {
   return { start, end };
 }
 
-export function CalendarView({ spaces, session, demo }: {
-  spaces: Space[]; session: AuthResult | null; demo: boolean;
+export function CalendarView({ spaces, session, demo, target, onTargetClose, onOpenResource }: {
+  spaces: Space[]; session: AuthResult | null; demo: boolean; target: DetailTarget|null;
+  onTargetClose:()=>void; onOpenResource:(target:DetailTarget)=>void;
 }) {
   const [spaceId, setSpaceId] = useState(spaces[0]?.id ?? "");
   const [calendars, setCalendars] = useState<Calendar[]>([]);
@@ -144,6 +146,8 @@ export function CalendarView({ spaces, session, demo }: {
     return () => { active = false; };
   }, [demo, rangeFrom, rangeTo, reloadKey, selectedSpaceColor, selectedSpaceId, selectedSpaceType, token]);
 
+  useEffect(()=>{if(!target||demo&&events.length===0)return;let active=true;async function openTarget(){await Promise.resolve();if(target.spaceId&&active)setSpaceId(target.spaceId);try{let loadedEvent:CalendarEvent;let occurrence:EventOccurrence;if(demo){const found=events.find(item=>item.eventId===target!.id);if(!found)throw new Error("일정을 찾을 수 없습니다.");occurrence=found;loadedEvent={...found,id:found.eventId,externalUrl:undefined,createdBy:"demo-owner",version:0}}else{loadedEvent=await api.getEvent(token!,target!.id);occurrence={occurrenceId:`detail-${loadedEvent.id}`,eventId:loadedEvent.id,calendarId:loadedEvent.calendarId,calendarName:loadedEvent.calendarName,calendarColor:loadedEvent.calendarColor,spaceId:loadedEvent.spaceId,title:loadedEvent.title,description:loadedEvent.description,location:loadedEvent.location,allDay:loadedEvent.allDay,startsAt:loadedEvent.startsAt,endsAt:loadedEvent.endsAt,timezone:loadedEvent.timezone,recurrence:loadedEvent.recurrence,recurrenceUntil:loadedEvent.recurrenceUntil,attendees:loadedEvent.attendees,reminderMinutes:loadedEvent.reminderMinutes,canEdit:loadedEvent.canEdit,originalStartsAt:loadedEvent.startsAt};}const resources=demo?resourceOptions.slice(0,2):await api.listEventResources(token!,loadedEvent.id);if(active){setCursor(new Date(occurrence.startsAt));setEditing(loadedEvent);setEditingOccurrence(occurrence);setLinkedResources(resources);setEditorOpen(true);setError("")}}catch(reason){if(active)setError(reason instanceof Error?reason.message:"일정을 열지 못했습니다.")}}void openTarget();return()=>{active=false}},[demo,events,resourceOptions,target,token]);
+
   function move(direction: number) {
     const next = new Date(cursor);
     if (mode === "month") next.setMonth(next.getMonth() + direction);
@@ -195,7 +199,7 @@ export function CalendarView({ spaces, session, demo }: {
         await api.updateOccurrence(session!.accessToken, editing.id, { originalStartsAt: editingOccurrence.originalStartsAt,
           title: input.title, description: input.description, location: input.location, allDay: input.allDay,
           startsAt: input.startsAt, endsAt: input.endsAt, timezone: input.timezone });
-        setEditorOpen(false); setEditing(null); setEditingOccurrence(null); setReloadKey((value) => value + 1); return;
+        setEditorOpen(false); setEditing(null); setEditingOccurrence(null); if(target)onTargetClose(); setReloadKey((value) => value + 1); return;
       }
       if (demo) {
         const eventId = editing?.id ?? crypto.randomUUID();
@@ -212,7 +216,7 @@ export function CalendarView({ spaces, session, demo }: {
         if (!editing) setEditing(saved);
         await api.replaceEventResources(session!.accessToken, saved.id, resources);
       }
-      setEditorOpen(false); setEditing(null); setEditingOccurrence(null); if (!demo) setReloadKey((value) => value + 1);
+      setEditorOpen(false); setEditing(null); setEditingOccurrence(null); if(target)onTargetClose(); if (!demo) setReloadKey((value) => value + 1);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "일정을 저장하지 못했습니다."); }
   }
 
@@ -221,7 +225,7 @@ export function CalendarView({ spaces, session, demo }: {
     try {
       if (!demo) await api.deleteEvent(session!.accessToken, editing.id);
       setEvents((current) => current.filter((item) => item.eventId !== editing.id));
-      setEditorOpen(false); setEditing(null);
+      setEditorOpen(false); setEditing(null); if(target)onTargetClose();
     } catch (reason) { setError(reason instanceof Error ? reason.message : "일정을 삭제하지 못했습니다."); }
   }
 
@@ -229,7 +233,7 @@ export function CalendarView({ spaces, session, demo }: {
     if (!editing || !editingOccurrence || !window.confirm("이 회차만 취소할까요? 다른 반복 회차는 유지됩니다.")) return;
     try {
       if (!demo) await api.cancelOccurrence(session!.accessToken, editing.id, editingOccurrence.originalStartsAt);
-      setEditorOpen(false); setEditing(null); setEditingOccurrence(null); setReloadKey((value) => value + 1);
+      setEditorOpen(false); setEditing(null); setEditingOccurrence(null); if(target)onTargetClose(); setReloadKey((value) => value + 1);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "이 회차를 취소하지 못했습니다."); }
   }
 
@@ -237,7 +241,7 @@ export function CalendarView({ spaces, session, demo }: {
     if (!editing || !editingOccurrence) return;
     try {
       if (!demo) await api.restoreOccurrence(session!.accessToken, editing.id, editingOccurrence.originalStartsAt);
-      setEditorOpen(false); setEditing(null); setEditingOccurrence(null); setReloadKey((value) => value + 1);
+      setEditorOpen(false); setEditing(null); setEditingOccurrence(null); if(target)onTargetClose(); setReloadKey((value) => value + 1);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "회차 변경을 되돌리지 못했습니다."); }
   }
 
@@ -344,7 +348,7 @@ export function CalendarView({ spaces, session, demo }: {
 
       {editorOpen && <EventEditor event={editing} occurrence={editingOccurrence} day={draftDay} calendars={calendars} members={members} canCreate={selectedSpace.role !== "VIEWER"} defaultTimezone={selectedSpace.timezone}
         resources={resourceOptions} linkedResources={linkedResources}
-        onClose={() => { setEditorOpen(false); setEditing(null); setEditingOccurrence(null); setLinkedResources([]); }} onSubmit={saveEvent} onDelete={removeEvent} onCancelOccurrence={cancelSingleOccurrence} onRestoreOccurrence={restoreSingleOccurrence} onRespond={respond} onDownload={downloadResource} />}
+        onClose={() => { setEditorOpen(false); setEditing(null); setEditingOccurrence(null); setLinkedResources([]); if(target)onTargetClose(); }} onSubmit={saveEvent} onDelete={removeEvent} onCancelOccurrence={cancelSingleOccurrence} onRestoreOccurrence={restoreSingleOccurrence} onRespond={respond} onDownload={downloadResource} onOpenResource={(item)=>{if(item.type==="ATTACHMENT"){if(item.postId)onOpenResource({type:"POST",id:item.postId,spaceId:selectedSpace.id});else void downloadResource(item)}else onOpenResource({type:item.type,id:item.resourceId,spaceId:selectedSpace.id})}} />}
       {calendarCreatorOpen && <CalendarCreator onClose={() => setCalendarCreatorOpen(false)} onSubmit={addCalendar} />}
     </section>
   );
@@ -370,13 +374,14 @@ function EventList({ items, onOpen, compact = false }: { items: EventOccurrence[
   </button>)}</div>;
 }
 
-function EventEditor({ event, occurrence, day, calendars, members, canCreate, defaultTimezone, resources, linkedResources, onClose, onSubmit, onDelete, onCancelOccurrence, onRestoreOccurrence, onRespond, onDownload }: {
+function EventEditor({ event, occurrence, day, calendars, members, canCreate, defaultTimezone, resources, linkedResources, onClose, onSubmit, onDelete, onCancelOccurrence, onRestoreOccurrence, onRespond, onDownload, onOpenResource }: {
   event: CalendarEvent | null; occurrence: EventOccurrence | null; day: Date; calendars: Calendar[]; members: SpaceMember[]; canCreate: boolean; defaultTimezone: string;
   resources: EventResource[]; linkedResources: EventResource[];
   onClose: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onDelete: () => void;
   onCancelOccurrence: () => void; onRestoreOccurrence: () => void;
   onRespond: (response: Exclude<AttendanceStatus, "PENDING">) => void;
   onDownload: (item: EventResource) => void;
+  onOpenResource: (item: EventResource) => void;
 }) {
   const timezone = occurrence?.timezone ?? event?.timezone ?? defaultTimezone;
   const displayTitle = occurrence?.title ?? event?.title;
@@ -420,6 +425,7 @@ function EventEditor({ event, occurrence, day, calendars, members, canCreate, de
         <div>{linkedResources.map((item) => <article key={resourceKey(item)}>
           <span>{resourceLabels[item.type]}</span><strong>{item.title}</strong><small>{resourceDescription(item)}</small>
           {item.type === "ATTACHMENT" && <button type="button" onClick={() => onDownload(item)}>파일 받기</button>}
+          <button type="button" onClick={() => onOpenResource(item)}>{item.type === "ATTACHMENT" ? "공유글 보기" : "상세 보기"}</button>
         </article>)}</div>
       </section>}
       {canEdit && <div className={styles.editorActions}>{event && occurrence?.recurrence !== "NONE" && <button className={styles.dangerOutlineButton} type="button" onClick={onCancelOccurrence}>이 회차 취소</button>}{event && <button className={styles.dangerOutlineButton} type="button" onClick={onDelete}>{occurrence?.recurrence !== "NONE" ? "전체 삭제" : "삭제"}</button>}<button className={styles.primaryButtonLarge}>{event ? "변경 저장" : "일정 만들기"}</button></div>}

@@ -5,9 +5,10 @@ import { FormEvent, useEffect, useState } from "react";
 import { api, AuthResult, PostAttachment, PostComment, PostDetail, SharedPost, Space } from "../lib/api";
 import { Pagination } from "./Pagination";
 import { ModalPortal } from "./ModalPortal";
+import { DetailTarget } from "../lib/detail-navigation";
 import styles from "./CouponWithApp.module.css";
 
-export function SharedView({ spaces, session, demo }: { spaces: Space[]; session: AuthResult | null; demo: boolean }) {
+export function SharedView({ spaces, session, demo, target, onTargetClose }: { spaces: Space[]; session: AuthResult | null; demo: boolean; target: DetailTarget|null; onTargetClose:()=>void }) {
   const [spaceId,setSpaceId]=useState(spaces[0]?.id??""); const [posts,setPosts]=useState<SharedPost[]>([]);
   const [query,setQuery]=useState(""); const [tag,setTag]=useState(""); const [pinned,setPinned]=useState(false);
   const [detail,setDetail]=useState<PostDetail|null>(null); const [editor,setEditor]=useState<SharedPost|null|"new">(null);
@@ -19,6 +20,8 @@ export function SharedView({ spaces, session, demo }: { spaces: Space[]; session
   useEffect(()=>{let active=true;async function load(){await Promise.resolve();if(!space?.id)return;setLoading(true);try{
     const loaded=demo?demoPosts(space.id):await api.listPosts(token!,space.id,query,tag,pinned);if(active)setPosts(loaded);
   }catch(reason){if(active)setError(reason instanceof Error?reason.message:"공유글을 불러오지 못했습니다.");}finally{if(active)setLoading(false);}}void load();return()=>{active=false};},[demo,pinned,query,reload,space?.id,tag,token]);
+
+  useEffect(()=>{if(!target)return;let active=true;async function openTarget(){await Promise.resolve();if(target.spaceId&&active)setSpaceId(target.spaceId);try{if(demo){const post=demoPosts(target.spaceId??space?.id??"").find(item=>item.id===target.id);if(!post)throw new Error("게시글을 찾을 수 없습니다.");if(active)setDetail({post,comments:[]})}else{const loaded=await api.getPost(token!,target.id);if(active)setDetail(loaded)}if(active)setError("")}catch(reason){if(active)setError(reason instanceof Error?reason.message:"게시글을 열지 못했습니다.")}}void openTarget();return()=>{active=false}},[demo,space?.id,target,token]);
 
   async function openPost(post:SharedPost){try{setDetail(demo?{post,comments:[]} : await api.getPost(token!,post.id));setError("");}catch(reason){setError(reason instanceof Error?reason.message:"게시글을 열지 못했습니다.");}}
   async function savePost(event:FormEvent<HTMLFormElement>){event.preventDefault();if(!space)return;const form=new FormData(event.currentTarget);const input={title:String(form.get("title")),content:String(form.get("content")),tags:String(form.get("tags")).split(",").map(value=>value.trim()).filter(Boolean)};try{
@@ -37,13 +40,13 @@ export function SharedView({ spaces, session, demo }: { spaces: Space[]; session
   const safePage=Math.min(page,Math.max(1,Math.ceil(posts.length/pageSize)));const visiblePosts=posts.slice((safePage-1)*pageSize,safePage*pageSize);
   return <section className={`${styles.card} ${styles.sharedCard}`}>
     <div className={styles.sharedToolbar}><div><h2>공유함</h2><p>글, 파일과 대화를 공간별로 모아 둡니다.</p></div>{space?.role!=="VIEWER"&&<button className={styles.primaryButton} onClick={()=>setEditor("new")}>＋ 새 글</button>}</div>
-    <div className={styles.filterBar}><select aria-label="공간" value={space?.id} onChange={event=>{setSpaceId(event.target.value);setDetail(null);setPage(1)}}>{spaces.map(item=><option value={item.id} key={item.id}>{item.name}</option>)}</select><input value={query} onChange={event=>{setQuery(event.target.value);setPage(1)}} placeholder="제목과 내용 검색" aria-label="게시글 검색"/><input value={tag} onChange={event=>{setTag(event.target.value);setPage(1)}} placeholder="태그 검색" aria-label="태그 검색"/><label><input type="checkbox" checked={pinned} onChange={event=>{setPinned(event.target.checked);setPage(1)}}/> 고정 글만</label></div>
+    <div className={styles.filterBar}><select aria-label="공간" value={space?.id} onChange={event=>{setSpaceId(event.target.value);setDetail(null);setPage(1);onTargetClose()}}>{spaces.map(item=><option value={item.id} key={item.id}>{item.name}</option>)}</select><input value={query} onChange={event=>{setQuery(event.target.value);setPage(1)}} placeholder="제목과 내용 검색" aria-label="게시글 검색"/><input value={tag} onChange={event=>{setTag(event.target.value);setPage(1)}} placeholder="태그 검색" aria-label="태그 검색"/><label><input type="checkbox" checked={pinned} onChange={event=>{setPinned(event.target.checked);setPage(1)}}/> 고정 글만</label></div>
     {loading&&<p className={styles.empty}>공유글을 불러오는 중…</p>}{error&&<p className={styles.error}>{error}</p>}
     <div className={styles.postGrid}>{visiblePosts.map(post=><article key={post.id} className={styles.postCard} onClick={()=>openPost(post)}><div className={styles.postMeta}><span>{post.authorName}</span><time>{new Date(post.updatedAt).toLocaleDateString("ko-KR")}</time>{post.pinned&&<b>고정</b>}</div><h3>{post.title}</h3><p>{post.content}</p><div className={styles.tagRow}>{post.tags.map(value=><span key={value}>#{value}</span>)}</div><footer><span>📎 {post.attachments.length}</span><span>댓글 {post.commentCount}</span>{canManage&&<button type="button" onClick={event=>{event.stopPropagation();void togglePin(post)}}>{post.pinned?"고정 해제":"고정"}</button>}</footer></article>)}</div>
     <Pagination page={safePage} totalItems={posts.length} pageSize={pageSize} onChange={setPage}/>
     {!loading&&posts.length===0&&<p className={styles.empty}>조건에 맞는 공유글이 없습니다.</p>}
     {editor&&<PostEditor post={editor==="new"?null:editor} onClose={()=>setEditor(null)} onSubmit={savePost}/>} 
-    {detail&&<PostDetailModal detail={detail} canManage={canManage} canComment={space?.role!=="VIEWER"} demo={demo} token={token} onClose={()=>setDetail(null)} onEdit={()=>{setEditor(detail.post);setDetail(null)}} onDelete={()=>deletePost(detail.post)} onPin={()=>togglePin(detail.post)} onAddComment={addComment} onEditComment={editComment} onDeleteComment={deleteComment}/>} 
+    {detail&&<PostDetailModal detail={detail} canManage={canManage} canComment={space?.role!=="VIEWER"} demo={demo} token={token} onClose={()=>{setDetail(null);if(target)onTargetClose()}} onEdit={()=>{setEditor(detail.post);setDetail(null)}} onDelete={()=>deletePost(detail.post)} onPin={()=>togglePin(detail.post)} onAddComment={addComment} onEditComment={editComment} onDeleteComment={deleteComment}/>}
     {editingComment&&<CommentEditor comment={editingComment} onClose={()=>setEditingComment(null)} onSubmit={saveComment}/>} 
   </section>;
 }

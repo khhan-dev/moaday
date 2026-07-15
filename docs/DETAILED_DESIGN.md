@@ -299,7 +299,14 @@ sequenceDiagram
 - Gmail 앱 비밀번호 사용
 - 연결·읽기·쓰기 시간 제한 기본 10초
 
-`InvitationMailService`는 현재 접속 주소로 만든 수락 링크를 발송합니다. `NotificationService`의 일반 활동 메일은 별도 구현이므로 발신 주소 공통화와 Outbox 재시도가 다음 보완 대상입니다.
+`InvitationMailService`는 현재 접속 주소로 만든 수락 링크를 구성하고, `NotificationService`는 활동 대상 상세 링크를 구성합니다. 실제 SMTP 메시지 생성·발신 주소 적용·실패 처리는 `MailDeliveryService`가 공통으로 담당합니다. SMTP Outbox 재시도와 발송 이력은 다음 보완 대상입니다.
+
+## 11.1 상세 화면 딥링크
+
+- URL 형식: `/?view={menu}&space={spaceId}&detail={EVENT|POST|COUPON}:{resourceId}`
+- 로그인 세션 복원 후 URL에서 공간과 대상을 읽어 해당 메뉴 및 상세 모달을 엽니다.
+- 오늘 화면, 통합검색, 앱 내 알림, 이메일 알림과 일정 연결 자료가 동일한 상세 대상 모델을 사용합니다.
+- 첨부파일 연결은 소속 공유글 상세로 이동하며 파일 다운로드도 별도로 제공합니다.
 
 ## 12. 저장소와 백업
 
@@ -361,11 +368,9 @@ sequenceDiagram
 
 ## 15. 현재 기술 부채와 개선 순서
 
-1. `NotificationService`와 `InvitationMailService`를 공통 메일 전송 계층으로 통합합니다.
-2. SMTP 발송을 트랜잭션 밖 Outbox로 옮기고 실패 재시도·발송 이력을 추가합니다.
-3. 알림·검색·연결 자료에서 상세 화면으로 이동하는 URL 딥링크를 구현합니다.
-4. 교차 출처 개발을 위해 CORS 허용 메서드에 `PUT`을 추가합니다.
-5. 목록 API를 서버 페이지네이션으로 변경합니다.
-6. 첨부파일을 S3 호환 저장소와 악성코드 검사 파이프라인으로 확장합니다.
-7. JWT 키를 Secret Manager로 이동하고 refresh token 또는 안전한 쿠키 세션을 검토합니다.
-8. CI에서 API·웹·E2E·컨테이너 취약점 검사를 자동화합니다.
+1. SMTP 발송을 트랜잭션 밖 Outbox로 옮기고 실패 재시도·발송 이력을 추가합니다.
+2. 교차 출처 개발을 위해 CORS 허용 메서드에 `PUT`을 추가합니다.
+3. 목록 API를 서버 페이지네이션으로 변경합니다.
+4. 첨부파일을 S3 호환 저장소와 악성코드 검사 파이프라인으로 확장합니다.
+5. JWT 키를 Secret Manager로 이동하고 refresh token 또는 안전한 쿠키 세션을 검토합니다.
+6. CI에서 API·웹·E2E·컨테이너 취약점 검사를 자동화합니다.
