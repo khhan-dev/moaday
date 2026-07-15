@@ -86,6 +86,27 @@ public class CalendarController {
         service.deleteEvent(userId(jwt), eventId);
     }
 
+    @PatchMapping("/events/{eventId}/occurrences")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void updateOccurrence(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID eventId,
+                          @Valid @RequestBody OccurrenceRequest request) {
+        service.overrideOccurrence(userId(jwt), eventId, request.originalStartsAt(), request.toInput());
+    }
+
+    @DeleteMapping("/events/{eventId}/occurrences")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void cancelOccurrence(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID eventId,
+                          @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant originalStartsAt) {
+        service.cancelOccurrence(userId(jwt), eventId, originalStartsAt);
+    }
+
+    @DeleteMapping("/events/{eventId}/occurrence-exceptions")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void restoreOccurrence(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID eventId,
+                           @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant originalStartsAt) {
+        service.restoreOccurrence(userId(jwt), eventId, originalStartsAt);
+    }
+
     @PostMapping("/events/{eventId}/attendance")
     CalendarService.EventView respond(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID eventId,
                                       @Valid @RequestBody AttendanceRequest request) {
@@ -111,4 +132,13 @@ public class CalendarController {
     }
 
     record AttendanceRequest(@NotNull AttendanceStatus response) {}
+
+    record OccurrenceRequest(@NotNull Instant originalStartsAt, @NotBlank @Size(max = 120) String title,
+                             @Size(max = 4000) String description, @Size(max = 200) String location,
+                             boolean allDay, @NotNull Instant startsAt, @NotNull Instant endsAt,
+                             @NotBlank @Size(max = 64) String timezone) {
+        CalendarService.OccurrenceInput toInput() {
+            return new CalendarService.OccurrenceInput(title, description, location, allDay, startsAt, endsAt, timezone);
+        }
+    }
 }

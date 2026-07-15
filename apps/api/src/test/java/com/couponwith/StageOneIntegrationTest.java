@@ -108,6 +108,31 @@ class StageOneIntegrationTest {
     }
 
     @Test
+    void registeredUserCanListDeclineAndAcceptReceivedInvitations() {
+        var owner = authService.register("received-owner@example.com", "password123!", "초대자", "Asia/Seoul");
+        var recipient = authService.register("received-member@example.com", "password123!", "수신자", "Asia/Seoul");
+        var family = spaceService.create(owner.user().id(), SpaceType.FAMILY, "초대할 가족", "Asia/Seoul", "orange");
+        var invitation = spaceService.invite(owner.user().id(), family.id(), recipient.user().email(), SpaceRole.MEMBER);
+
+        assertThat(spaceService.listReceivedInvitations(recipient.user().id())).singleElement().satisfies(received -> {
+            assertThat(received.id()).isEqualTo(invitation.id());
+            assertThat(received.spaceName()).isEqualTo("초대할 가족");
+            assertThat(received.invitedByName()).isEqualTo("초대자");
+            assertThat(received.role()).isEqualTo(SpaceRole.MEMBER);
+        });
+
+        var declined = spaceService.declineReceivedInvitation(recipient.user().id(), invitation.id());
+        assertThat(declined.status()).isEqualTo("DECLINED");
+        assertThat(spaceService.listReceivedInvitations(recipient.user().id())).isEmpty();
+
+        var reissued = spaceService.invite(owner.user().id(), family.id(), recipient.user().email(), SpaceRole.VIEWER);
+        var accepted = spaceService.acceptReceivedInvitation(recipient.user().id(), reissued.id());
+        assertThat(accepted.id()).isEqualTo(family.id());
+        assertThat(accepted.role()).isEqualTo(SpaceRole.VIEWER);
+        assertThat(spaceService.list(recipient.user().id())).extracting(SpaceService.SpaceView::id).contains(family.id());
+    }
+
+    @Test
     void memberCanLeaveAndOnlyOwnerCanArchiveGroupSpace() {
         var owner = authService.register("lifecycle-owner@example.com", "password123!", "소유자", "Asia/Seoul");
         var member = authService.register("lifecycle-member@example.com", "password123!", "멤버", "Asia/Seoul");

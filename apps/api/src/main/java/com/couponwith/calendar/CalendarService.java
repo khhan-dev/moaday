@@ -1,5 +1,6 @@
 package com.couponwith.calendar;
 
+import com.couponwith.audit.AuditService;
 import com.couponwith.common.ApiException;
 import com.couponwith.identity.UserRepository;
 import com.couponwith.notification.NotificationService;
@@ -24,6 +25,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 public class CalendarService {
@@ -33,22 +36,28 @@ public class CalendarService {
     private final CalendarEventRepository events;
     private final EventAttendeeRepository attendees;
     private final EventReminderRepository reminders;
+    private final EventOccurrenceExceptionRepository occurrenceExceptions;
     private final SpaceRepository spaces;
     private final SpaceMemberRepository members;
     private final UserRepository users;
     private final NotificationService notifications;
+    private final AuditService audits;
 
     public CalendarService(SharedCalendarRepository calendars, CalendarEventRepository events,
                            EventAttendeeRepository attendees, EventReminderRepository reminders,
-                           SpaceRepository spaces, SpaceMemberRepository members, UserRepository users, NotificationService notifications) {
+                           EventOccurrenceExceptionRepository occurrenceExceptions, SpaceRepository spaces,
+                           SpaceMemberRepository members, UserRepository users, NotificationService notifications,
+                           AuditService audits) {
         this.calendars = calendars;
         this.events = events;
         this.attendees = attendees;
         this.reminders = reminders;
+        this.occurrenceExceptions = occurrenceExceptions;
         this.spaces = spaces;
         this.members = members;
         this.users = users;
         this.notifications = notifications;
+        this.audits = audits;
     }
 
     @Transactional
@@ -102,10 +111,25 @@ public class CalendarService {
         requireMembership(spaceId, actorId);
         validateRange(from, to);
         var result = new ArrayList<EventOccurrenceView>();
-        for (var event : events.findBySpaceIdAndStartsAtLessThanOrderByStartsAt(spaceId, to)) {
+        for (var event : events.findBySpaceIdOrderByStartsAt(spaceId)) {
             var details = details(event, actorId);
-            expand(event, from, to).forEach(occurrence -> result.add(EventOccurrenceView.from(
-                    details, occurrence.start(), occurrence.end(), occurrence.id())));
+            var exceptionMap = occurrenceExceptions.findByEventIdOrderByOriginalStartsAt(event.getId()).stream()
+                    .collect(Collectors.toMap(EventOccurrenceException::getOriginalStartsAt, Function.identity()));
+            var expanded = expand(event, from, to);
+            var expandedStarts = expanded.stream().map(Occurrence::originalStart).collect(Collectors.toSet());
+            for (var occurrence : expanded) {
+                var exception = exceptionMap.get(occurrence.originalStart());
+                if (exception == null) result.add(EventOccurrenceView.from(details, occurrence, null));
+                else if (exception.getAction() == OccurrenceExceptionAction.OVERRIDE && overlaps(exception.getStartsAt(), exception.getEndsAt(), from, to))
+                    result.add(EventOccurrenceView.from(details, occurrence, exception));
+            }
+            exceptionMap.values().stream()
+                    .filter(item -> item.getAction() == OccurrenceExceptionAction.OVERRIDE)
+                    .filter(item -> !expandedStarts.contains(item.getOriginalStartsAt()))
+                    .filter(item -> overlaps(item.getStartsAt(), item.getEndsAt(), from, to))
+                    .forEach(item -> result.add(EventOccurrenceView.from(details,
+                            new Occurrence(event.getId() + ":" + item.getOriginalStartsAt().toEpochMilli(),
+                                    item.getOriginalStartsAt(), item.getOriginalStartsAt(), item.getOriginalStartsAt()), item)));
         }
         result.sort(Comparator.comparing(EventOccurrenceView::startsAt).thenComparing(EventOccurrenceView::title));
         return result;
@@ -142,12 +166,54 @@ public class CalendarService {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "CALENDAR_SPACE_MISMATCH", "같은 공간의 캘린더로만 이동할 수 있습니다.");
         }
         validateInput(input, event.getSpaceId());
+        var recurrenceChanged = !event.getStartsAt().equals(input.startsAt()) || !event.getTimezone().equals(input.timezone())
+                || event.getRecurrence() != input.recurrence() || !java.util.Objects.equals(event.getRecurrenceUntil(), input.recurrenceUntil());
         event.update(calendar.getId(), input.title().trim(), clean(input.description()), clean(input.location()),
                 clean(input.externalUrl()), input.allDay(), input.startsAt(), input.endsAt(), input.timezone(),
                 input.recurrence(), input.recurrenceUntil());
         replaceAttendees(event, actorId, input.attendeeUserIds(), false);
         replaceReminders(event.getId(), input.reminderMinutes());
+        if (recurrenceChanged) occurrenceExceptions.deleteByEventId(eventId);
         return details(event, actorId);
+    }
+
+    @Transactional
+    public void overrideOccurrence(UUID actorId, UUID eventId, Instant originalStartsAt, OccurrenceInput input) {
+        var event = requireEvent(eventId);
+        requireEventMutation(event, actorId);
+        requireRecurringOccurrence(event, originalStartsAt);
+        validateOccurrenceInput(input);
+        var exception = occurrenceExceptions.findByEventIdAndOriginalStartsAt(eventId, originalStartsAt)
+                .orElseGet(() -> new EventOccurrenceException(UUID.randomUUID(), eventId, originalStartsAt, actorId));
+        exception.override(input.title().trim(), clean(input.description()), clean(input.location()), input.allDay(),
+                input.startsAt(), input.endsAt(), input.timezone(), actorId);
+        occurrenceExceptions.save(exception);
+        audits.record(event.getSpaceId(), actorId, "EVENT_OCCURRENCE_UPDATED", "EVENT", eventId,
+                event.getTitle() + " 반복 일정 한 회차 수정", originalStartsAt.toString());
+    }
+
+    @Transactional
+    public void cancelOccurrence(UUID actorId, UUID eventId, Instant originalStartsAt) {
+        var event = requireEvent(eventId);
+        requireEventMutation(event, actorId);
+        requireRecurringOccurrence(event, originalStartsAt);
+        var exception = occurrenceExceptions.findByEventIdAndOriginalStartsAt(eventId, originalStartsAt)
+                .orElseGet(() -> new EventOccurrenceException(UUID.randomUUID(), eventId, originalStartsAt, actorId));
+        exception.cancel(actorId);
+        occurrenceExceptions.save(exception);
+        audits.record(event.getSpaceId(), actorId, "EVENT_OCCURRENCE_CANCELLED", "EVENT", eventId,
+                event.getTitle() + " 반복 일정 한 회차 취소", originalStartsAt.toString());
+    }
+
+    @Transactional
+    public void restoreOccurrence(UUID actorId, UUID eventId, Instant originalStartsAt) {
+        var event = requireEvent(eventId);
+        requireEventMutation(event, actorId);
+        var exception = occurrenceExceptions.findByEventIdAndOriginalStartsAt(eventId, originalStartsAt)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "EVENT_OCCURRENCE_EXCEPTION_NOT_FOUND", "되돌릴 회차 변경이 없습니다."));
+        occurrenceExceptions.delete(exception);
+        audits.record(event.getSpaceId(), actorId, "EVENT_OCCURRENCE_RESTORED", "EVENT", eventId,
+                event.getTitle() + " 반복 일정 회차 예외 해제", originalStartsAt.toString());
     }
 
     @Transactional
@@ -213,6 +279,31 @@ public class CalendarService {
         }
     }
 
+    private void validateOccurrenceInput(OccurrenceInput input) {
+        if (input.title() == null || input.title().isBlank()) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "EVENT_TITLE_REQUIRED", "일정 제목을 입력해 주세요.");
+        }
+        if (input.startsAt() == null || input.endsAt() == null || !input.endsAt().isAfter(input.startsAt())) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_EVENT_TIME", "종료 시각은 시작 시각보다 늦어야 합니다.");
+        }
+        try { ZoneId.of(input.timezone()); }
+        catch (Exception ignored) { throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_TIMEZONE", "올바른 시간대를 입력해 주세요."); }
+    }
+
+    private void requireRecurringOccurrence(CalendarEvent event, Instant originalStartsAt) {
+        if (event.getRecurrence() == EventRecurrence.NONE) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "EVENT_NOT_RECURRING", "반복 일정만 한 회차를 변경할 수 있습니다.");
+        }
+        if (originalStartsAt == null || expand(event, originalStartsAt.minusMillis(1), originalStartsAt.plusMillis(1)).stream()
+                .noneMatch(item -> item.originalStart().equals(originalStartsAt))) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "EVENT_OCCURRENCE_NOT_FOUND", "반복 일정 회차를 찾을 수 없습니다.");
+        }
+    }
+
+    private boolean overlaps(Instant startsAt, Instant endsAt, Instant from, Instant to) {
+        return startsAt != null && endsAt != null && endsAt.isAfter(from) && startsAt.isBefore(to);
+    }
+
     private void replaceAttendees(CalendarEvent event, UUID actorId, Set<UUID> requested, boolean creating) {
         var desired = new LinkedHashSet<>(requested == null ? Set.<UUID>of() : requested);
         desired.add(event.getCreatedBy());
@@ -255,7 +346,7 @@ public class CalendarService {
         var duration = Duration.between(event.getStartsAt(), event.getEndsAt());
         if (event.getRecurrence() == EventRecurrence.NONE) {
             return event.getEndsAt().isAfter(from) && event.getStartsAt().isBefore(to)
-                    ? List.of(new Occurrence(event.getId().toString(), event.getStartsAt(), event.getEndsAt())) : List.of();
+                    ? List.of(new Occurrence(event.getId().toString(), event.getStartsAt(), event.getStartsAt(), event.getEndsAt())) : List.of();
         }
         var zone = ZoneId.of(event.getTimezone());
         var base = event.getStartsAt().atZone(zone);
@@ -267,7 +358,7 @@ public class CalendarService {
             if (!start.isBefore(to)) break;
             if (event.getRecurrenceUntil() != null && start.isAfter(event.getRecurrenceUntil())) break;
             var end = start.plus(duration);
-            if (end.isAfter(from)) result.add(new Occurrence(event.getId() + ":" + start.toEpochMilli(), start, end));
+            if (end.isAfter(from)) result.add(new Occurrence(event.getId() + ":" + start.toEpochMilli(), start, start, end));
         }
         return result;
     }
@@ -343,12 +434,14 @@ public class CalendarService {
 
     private String clean(String value) { return value == null || value.isBlank() ? null : value.trim(); }
 
-    private record Occurrence(String id, Instant start, Instant end) {}
+    private record Occurrence(String id, Instant originalStart, Instant start, Instant end) {}
 
     public record EventInput(UUID calendarId, String title, String description, String location, String externalUrl,
                              boolean allDay, Instant startsAt, Instant endsAt, String timezone,
                              EventRecurrence recurrence, Instant recurrenceUntil, Set<UUID> attendeeUserIds,
                              Set<Integer> reminderMinutes) {}
+    public record OccurrenceInput(String title, String description, String location, boolean allDay,
+                                  Instant startsAt, Instant endsAt, String timezone) {}
     public record CalendarView(UUID id, UUID spaceId, String name, String color) {
         static CalendarView from(SharedCalendar calendar) {
             return new CalendarView(calendar.getId(), calendar.getSpaceId(), calendar.getName(), calendar.getColor());
@@ -363,13 +456,18 @@ public class CalendarService {
     public record EventOccurrenceView(String occurrenceId, UUID eventId, UUID calendarId, String calendarName,
                                       String calendarColor, UUID spaceId, String title, String description,
                                       String location, boolean allDay, Instant startsAt, Instant endsAt,
+                                      String timezone, Instant originalStartsAt, OccurrenceExceptionAction exceptionAction,
                                       EventRecurrence recurrence, Instant recurrenceUntil, List<AttendeeView> attendees,
                                       List<Integer> reminderMinutes, boolean canEdit) {
-        static EventOccurrenceView from(EventView event, Instant start, Instant end, String occurrenceId) {
-            return new EventOccurrenceView(occurrenceId, event.id(), event.calendarId(), event.calendarName(),
-                    event.calendarColor(), event.spaceId(), event.title(), event.description(), event.location(),
-                    event.allDay(), start, end, event.recurrence(), event.recurrenceUntil(), event.attendees(),
-                    event.reminderMinutes(), event.canEdit());
+        static EventOccurrenceView from(EventView event, Occurrence occurrence, EventOccurrenceException exception) {
+            var overridden = exception != null && exception.getAction() == OccurrenceExceptionAction.OVERRIDE;
+            return new EventOccurrenceView(occurrence.id(), event.id(), event.calendarId(), event.calendarName(),
+                    event.calendarColor(), event.spaceId(), overridden ? exception.getTitle() : event.title(),
+                    overridden ? exception.getDescription() : event.description(), overridden ? exception.getLocation() : event.location(),
+                    overridden ? exception.getAllDay() : event.allDay(), overridden ? exception.getStartsAt() : occurrence.start(),
+                    overridden ? exception.getEndsAt() : occurrence.end(), overridden ? exception.getTimezone() : event.timezone(),
+                    occurrence.originalStart(), overridden ? OccurrenceExceptionAction.OVERRIDE : null,
+                    event.recurrence(), event.recurrenceUntil(), event.attendees(), event.reminderMinutes(), event.canEdit());
         }
     }
 }

@@ -32,6 +32,8 @@ public class Invitation {
     private Instant acceptedAt;
     @Column(name = "revoked_at")
     private Instant revokedAt;
+    @Column(name = "declined_at")
+    private Instant declinedAt;
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -52,16 +54,20 @@ public class Invitation {
     public UUID getSpaceId() { return spaceId; }
     public String getEmail() { return email; }
     public SpaceRole getRole() { return role; }
+    public UUID getInvitedBy() { return invitedBy; }
     public Instant getExpiresAt() { return expiresAt; }
     public Instant getAcceptedAt() { return acceptedAt; }
     public Instant getRevokedAt() { return revokedAt; }
+    public Instant getDeclinedAt() { return declinedAt; }
     public Instant getCreatedAt() { return createdAt; }
-    public boolean isActive() { return acceptedAt == null && revokedAt == null && expiresAt.isAfter(Instant.now()); }
+    public boolean isActive() { return acceptedAt == null && revokedAt == null && declinedAt == null && expiresAt.isAfter(Instant.now()); }
     public void accept() { this.acceptedAt = Instant.now(); }
     public void revoke() { this.revokedAt = Instant.now(); }
+    public void decline() { this.declinedAt = Instant.now(); }
 
     public String status() {
         if (acceptedAt != null) return "ACCEPTED";
+        if (declinedAt != null) return "DECLINED";
         if (revokedAt != null) return "REVOKED";
         if (!expiresAt.isAfter(Instant.now())) return "EXPIRED";
         return "PENDING";

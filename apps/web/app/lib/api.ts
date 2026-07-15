@@ -3,10 +3,11 @@ export type SpaceRole = "OWNER" | "ADMIN" | "MEMBER" | "VIEWER";
 export type User = { id: string; email: string; displayName: string; timezone: string };
 export type AuthResult = { accessToken: string; expiresAt: string; user: User };
 export type Space = { id: string; type: SpaceType; name: string; timezone: string; color: string; role: SpaceRole };
-export type Invitation = { id: string; spaceId: string; email: string; role: SpaceRole; expiresAt: string; oneTimeToken: string };
+export type Invitation = { id: string; spaceId: string; email: string; role: SpaceRole; expiresAt: string; oneTimeToken: string; emailSent: boolean };
 export type SpaceMember = { userId: string; displayName: string; email: string; role: SpaceRole; joinedAt: string; currentUser: boolean };
-export type InvitationStatus = "PENDING" | "ACCEPTED" | "REVOKED" | "EXPIRED";
+export type InvitationStatus = "PENDING" | "ACCEPTED" | "DECLINED" | "REVOKED" | "EXPIRED";
 export type InvitationSummary = { id: string; spaceId: string; email: string; role: SpaceRole; expiresAt: string; status: InvitationStatus; createdAt: string };
+export type ReceivedInvitation = { id: string; spaceId: string; spaceName: string; spaceType: SpaceType; role: SpaceRole; invitedByName: string; expiresAt: string; createdAt: string };
 export type Calendar = { id: string; spaceId: string; name: string; color: string };
 export type EventRecurrence = "NONE" | "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
 export type AttendanceStatus = "PENDING" | "ACCEPTED" | "DECLINED" | "MAYBE";
@@ -17,7 +18,10 @@ export type CalendarEvent = {
   startsAt: string; endsAt: string; timezone: string; recurrence: EventRecurrence; recurrenceUntil?: string;
   createdBy: string; version: number; attendees: EventAttendee[]; reminderMinutes: number[]; canEdit: boolean;
 };
-export type EventOccurrence = Omit<CalendarEvent, "id" | "externalUrl" | "timezone" | "createdBy" | "version"> & { occurrenceId: string; eventId: string };
+export type OccurrenceExceptionAction = "OVERRIDE" | "CANCELLED";
+export type EventOccurrence = Omit<CalendarEvent, "id" | "externalUrl" | "createdBy" | "version"> & {
+  occurrenceId: string; eventId: string; originalStartsAt: string; exceptionAction?: OccurrenceExceptionAction;
+};
 export type EventInput = {
   calendarId?: string; title: string; description?: string; location?: string; externalUrl?: string;
   allDay: boolean; startsAt: string; endsAt: string; timezone: string; recurrence: EventRecurrence;
@@ -29,12 +33,14 @@ export type EventResource = {
   status?: CouponStatus; expiresAt?: string; postId?: string; contentType?: string; sizeBytes?: number;
 };
 export type EventResourceReference = { type: EventResourceType; resourceId: string };
+export type IcsImportResult = { imported: number; skipped: number; errors: string[] };
 export type PostAttachment = { id: string; originalName: string; contentType: string; sizeBytes: number };
 export type PostComment = { id: string; authorId: string; authorName: string; content: string; createdAt: string; updatedAt: string; canEdit: boolean };
 export type SharedPost = { id: string; spaceId: string; title: string; content: string; pinned: boolean; authorId: string; authorName: string; tags: string[]; attachments: PostAttachment[]; commentCount: number; createdAt: string; updatedAt: string; canEdit: boolean };
 export type PostDetail = { post: SharedPost; comments: PostComment[] };
 export type CouponStatus = "AVAILABLE" | "CLAIMED" | "USED" | "EXPIRED";
-export type Coupon = { id: string; spaceId: string; title: string; brand: string; description?: string; expiresAt: string; barcodeFormat: string; status: CouponStatus; ownerId: string; claimedBy?: string; claimedByName?: string; claimedAt?: string; claimExpiresAt?: string; usedBy?: string; usedAt?: string; barcodeAvailable: boolean; canEdit: boolean; canCorrect: boolean; version: number; createdAt: string; updatedAt: string };
+export type CouponImage = { id: string; originalName: string; contentType: string; sizeBytes: number };
+export type Coupon = { id: string; spaceId: string; title: string; brand: string; description?: string; expiresAt: string; barcodeFormat?: string; status: CouponStatus; ownerId: string; claimedBy?: string; claimedByName?: string; claimedAt?: string; claimExpiresAt?: string; usedBy?: string; usedAt?: string; image?: CouponImage; hasBarcode: boolean; barcodeAvailable: boolean; canEdit: boolean; canCorrect: boolean; version: number; createdAt: string; updatedAt: string };
 export type Barcode = { couponId: string; value: string; format: string; status: CouponStatus };
 export type AuditEntry = { id: string; spaceId: string; actorId?: string; actorName: string; action: string; resourceType: string; resourceId?: string; summary: string; reason?: string; createdAt: string };
 export type CouponInput = { title: string; brand: string; description?: string; expiresAt: string; barcodeValue: string; barcodeFormat: string };
@@ -70,6 +76,9 @@ export const api = {
   createSpace: (token: string, input: { type: SpaceType; name: string; timezone: string; color: string }) => request<Space>("/spaces", { method: "POST", body: JSON.stringify(input) }, token),
   invite: (token: string, spaceId: string, input: { email: string; role: SpaceRole }) => request<Invitation>(`/spaces/${spaceId}/invitations`, { method: "POST", body: JSON.stringify(input) }, token),
   acceptInvitation: (token: string, invitationToken: string) => request<Space>("/invitations/accept", { method: "POST", body: JSON.stringify({ token: invitationToken }) }, token),
+  listReceivedInvitations: (token: string) => request<ReceivedInvitation[]>("/invitations", {}, token),
+  acceptReceivedInvitation: (token: string, invitationId: string) => request<Space>(`/invitations/${invitationId}/accept`, { method: "POST" }, token),
+  declineReceivedInvitation: (token: string, invitationId: string) => request<InvitationSummary>(`/invitations/${invitationId}/decline`, { method: "POST" }, token),
   listMembers: (token: string, spaceId: string) => request<SpaceMember[]>(`/spaces/${spaceId}/members`, {}, token),
   changeMemberRole: (token: string, spaceId: string, memberUserId: string, role: SpaceRole) => request<SpaceMember>(`/spaces/${spaceId}/members/${memberUserId}`, { method: "PATCH", body: JSON.stringify({ role }) }, token),
   removeMember: (token: string, spaceId: string, memberUserId: string) => request<void>(`/spaces/${spaceId}/members/${memberUserId}`, { method: "DELETE" }, token),
@@ -87,6 +96,20 @@ export const api = {
   updateEvent: (token: string, eventId: string, input: EventInput) => request<CalendarEvent>(`/events/${eventId}`, { method: "PATCH", body: JSON.stringify(input) }, token),
   deleteEvent: (token: string, eventId: string) => request<void>(`/events/${eventId}`, { method: "DELETE" }, token),
   respondAttendance: (token: string, eventId: string, response: Exclude<AttendanceStatus, "PENDING">) => request<CalendarEvent>(`/events/${eventId}/attendance`, { method: "POST", body: JSON.stringify({ response }) }, token),
+  updateOccurrence: (token: string, eventId: string, input: { originalStartsAt: string; title: string; description?: string; location?: string; allDay: boolean; startsAt: string; endsAt: string; timezone: string }) => request<void>(`/events/${eventId}/occurrences`, { method: "PATCH", body: JSON.stringify(input) }, token),
+  cancelOccurrence: (token: string, eventId: string, originalStartsAt: string) => request<void>(`/events/${eventId}/occurrences?originalStartsAt=${encodeURIComponent(originalStartsAt)}`, { method: "DELETE" }, token),
+  restoreOccurrence: (token: string, eventId: string, originalStartsAt: string) => request<void>(`/events/${eventId}/occurrence-exceptions?originalStartsAt=${encodeURIComponent(originalStartsAt)}`, { method: "DELETE" }, token),
+  exportIcs: async (token: string, spaceId: string, filename: string) => {
+    const response = await fetch(`${API_URL}/spaces/${spaceId}/calendar.ics`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!response.ok) throw new Error("ICS 파일을 내보내지 못했습니다.");
+    const url = URL.createObjectURL(await response.blob()); const link = document.createElement("a");
+    link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url);
+  },
+  importIcs: async (token: string, calendarId: string, content: string) => {
+    const response = await fetch(`${API_URL}/calendars/${calendarId}/imports/ics`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "text/calendar" }, body: content });
+    if (!response.ok) { const error = await response.json().catch(() => ({})) as { message?: string }; throw new Error(error.message ?? "ICS 파일을 가져오지 못했습니다."); }
+    return response.json() as Promise<IcsImportResult>;
+  },
   listLinkableResources: (token: string, spaceId: string) => request<EventResource[]>(`/spaces/${spaceId}/linkable-resources`, {}, token),
   listEventResources: (token: string, eventId: string) => request<EventResource[]>(`/events/${eventId}/resources`, {}, token),
   replaceEventResources: (token: string, eventId: string, resources: EventResourceReference[]) => request<EventResource[]>(`/events/${eventId}/resources`, { method: "PUT", body: JSON.stringify({ resources }) }, token),
@@ -119,6 +142,18 @@ export const api = {
   listCoupons: (token: string, spaceId: string, status = "", query = "") => request<Coupon[]>(`/spaces/${spaceId}/coupons?status=${encodeURIComponent(status)}&query=${encodeURIComponent(query)}`, {}, token),
   createCoupon: (token: string, spaceId: string, input: CouponInput) => request<Coupon>(`/spaces/${spaceId}/coupons`, { method: "POST", body: JSON.stringify(input) }, token),
   updateCoupon: (token: string, couponId: string, input: CouponInput) => request<Coupon>(`/coupons/${couponId}`, { method: "PATCH", body: JSON.stringify(input) }, token),
+  uploadCouponImage: async (token: string, couponId: string, file: File) => {
+    const body = new FormData(); body.append("file", file);
+    const response = await fetch(`${API_URL}/coupons/${couponId}/image`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body });
+    if (!response.ok) { const error = await response.json().catch(() => ({})) as { message?: string }; throw new Error(error.message ?? "쿠폰 이미지를 올리지 못했습니다."); }
+    return response.json() as Promise<CouponImage>;
+  },
+  couponImageBlob: async (token: string, imageId: string) => {
+    const response = await fetch(`${API_URL}/coupon-images/${imageId}/content`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!response.ok) throw new Error("쿠폰 이미지를 불러오지 못했습니다.");
+    return response.blob();
+  },
+  deleteCouponImage: (token: string, couponId: string) => request<void>(`/coupons/${couponId}/image`, { method: "DELETE" }, token),
   deleteCoupon: (token: string, couponId: string) => request<void>(`/coupons/${couponId}`, { method: "DELETE" }, token),
   claimCoupon: (token: string, couponId: string) => request<Coupon>(`/coupons/${couponId}/claim`, { method: "POST" }, token),
   releaseCoupon: (token: string, couponId: string) => request<Coupon>(`/coupons/${couponId}/release`, { method: "POST" }, token),

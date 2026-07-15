@@ -14,8 +14,8 @@ public class Coupon {
     @Column(nullable=false) private String brand;
     @Column(length=2000) private String description;
     @Column(name="expires_at",nullable=false) private Instant expiresAt;
-    @Column(name="barcode_value",nullable=false,length=500) private String barcodeValue;
-    @Column(name="barcode_format",nullable=false) private String barcodeFormat;
+    @Column(name="barcode_value",length=500) private String barcodeValue;
+    @Column(name="barcode_format") private String barcodeFormat;
     @Enumerated(EnumType.STRING) @Column(nullable=false) private CouponStatus status;
     @Column(name="claimed_by") private UUID claimedBy;
     @Column(name="claimed_at") private Instant claimedAt;

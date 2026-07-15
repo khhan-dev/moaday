@@ -1,0 +1,2 @@
+ALTER TABLE coupons ALTER COLUMN barcode_value DROP NOT NULL;
+ALTER TABLE coupons ALTER COLUMN barcode_format DROP NOT NULL;

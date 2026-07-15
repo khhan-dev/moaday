@@ -8,8 +8,10 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface InvitationRepository extends JpaRepository<Invitation, UUID> {
-    boolean existsBySpaceIdAndEmailIgnoreCaseAndAcceptedAtIsNullAndRevokedAtIsNullAndExpiresAtAfter(
+    boolean existsBySpaceIdAndEmailIgnoreCaseAndAcceptedAtIsNullAndRevokedAtIsNullAndDeclinedAtIsNullAndExpiresAtAfter(
             UUID spaceId, String email, Instant now);
     List<Invitation> findBySpaceIdOrderByCreatedAtDesc(UUID spaceId);
+    List<Invitation> findByEmailIgnoreCaseAndAcceptedAtIsNullAndRevokedAtIsNullAndDeclinedAtIsNullAndExpiresAtAfterOrderByCreatedAtDesc(
+            String email, Instant now);
     Optional<Invitation> findByTokenHash(String tokenHash);
 }

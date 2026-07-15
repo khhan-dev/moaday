@@ -39,10 +39,17 @@ public class CalendarEvent {
     public CalendarEvent(UUID id, UUID calendarId, UUID spaceId, String title, String description,
                          String location, String externalUrl, boolean allDay, Instant startsAt, Instant endsAt,
                          String timezone, EventRecurrence recurrence, Instant recurrenceUntil, UUID createdBy) {
+        this(id, calendarId, spaceId, id + "@moaday.local", title, description, location, externalUrl, allDay,
+                startsAt, endsAt, timezone, recurrence, recurrenceUntil, createdBy);
+    }
+
+    public CalendarEvent(UUID id, UUID calendarId, UUID spaceId, String uid, String title, String description,
+                         String location, String externalUrl, boolean allDay, Instant startsAt, Instant endsAt,
+                         String timezone, EventRecurrence recurrence, Instant recurrenceUntil, UUID createdBy) {
         this.id = id;
         this.calendarId = calendarId;
         this.spaceId = spaceId;
-        this.uid = id + "@moaday.local";
+        this.uid = uid;
         this.createdBy = createdBy;
         this.createdAt = Instant.now();
         this.version = 0;

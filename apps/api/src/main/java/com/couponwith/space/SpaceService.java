@@ -25,15 +25,18 @@ public class SpaceService {
     private final InvitationRepository invitations;
     private final UserRepository users;
     private final AuditService audits;
+    private final InvitationMailService invitationMail;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public SpaceService(SpaceRepository spaces, SpaceMemberRepository members,
-                        InvitationRepository invitations, UserRepository users, AuditService audits) {
+                        InvitationRepository invitations, UserRepository users, AuditService audits,
+                        InvitationMailService invitationMail) {
         this.spaces = spaces;
         this.members = members;
         this.invitations = invitations;
         this.users = users;
         this.audits = audits;
+        this.invitationMail = invitationMail;
     }
 
     @Transactional(readOnly = true)
@@ -59,6 +62,11 @@ public class SpaceService {
 
     @Transactional
     public InvitationView invite(UUID actorId, UUID spaceId, String rawEmail, SpaceRole role) {
+        return invite(actorId, spaceId, rawEmail, role, null);
+    }
+
+    @Transactional
+    public InvitationView invite(UUID actorId, UUID spaceId, String rawEmail, SpaceRole role, String webBaseUrl) {
         var actor = requireMembership(spaceId, actorId);
         if (actor.getRole() != SpaceRole.OWNER && actor.getRole() != SpaceRole.ADMIN) {
             throw new ApiException(HttpStatus.FORBIDDEN, "INVITE_NOT_ALLOWED", "구성원을 초대할 권한이 없습니다.");
@@ -75,15 +83,21 @@ public class SpaceService {
                 throw new ApiException(HttpStatus.CONFLICT, "MEMBER_ALREADY_EXISTS", "이미 공간에 참여 중인 구성원입니다.");
             }
         });
-        if (invitations.existsBySpaceIdAndEmailIgnoreCaseAndAcceptedAtIsNullAndRevokedAtIsNullAndExpiresAtAfter(
+        if (invitations.existsBySpaceIdAndEmailIgnoreCaseAndAcceptedAtIsNullAndRevokedAtIsNullAndDeclinedAtIsNullAndExpiresAtAfter(
                 spaceId, email, Instant.now())) {
             throw new ApiException(HttpStatus.CONFLICT, "ACTIVE_INVITATION_EXISTS", "이미 대기 중인 초대가 있습니다.");
         }
         var rawToken = generateToken();
         var invitation = invitations.save(new Invitation(UUID.randomUUID(), spaceId, email, role,
                 hash(rawToken), actorId, Instant.now().plus(Duration.ofDays(7))));
+        var space = requireSpace(spaceId);
+        var inviter = requireUser(actorId);
+        var invitationUrl = webBaseUrl == null ? null
+                : webBaseUrl.replaceAll("/+$", "") + "/?invite=" + rawToken;
+        var emailSent = invitationMail.send(email, inviter.getDisplayName(), space.getName(), role,
+                invitation.getExpiresAt(), invitationUrl);
         return new InvitationView(invitation.getId(), invitation.getSpaceId(), email, role,
-                invitation.getExpiresAt(), rawToken);
+                invitation.getExpiresAt(), rawToken, emailSent);
     }
 
     @Transactional
@@ -91,12 +105,41 @@ public class SpaceService {
         var user = requireUser(userId);
         var invitation = invitations.findByTokenHash(hash(rawToken))
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "INVITATION_NOT_FOUND", "초대를 찾을 수 없습니다."));
-        if (!invitation.isActive()) {
-            throw new ApiException(HttpStatus.GONE, "INVITATION_EXPIRED", "초대가 만료되었거나 취소되었습니다.");
-        }
-        if (!invitation.getEmail().equalsIgnoreCase(user.getEmail())) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "INVITATION_EMAIL_MISMATCH", "초대받은 이메일 계정으로 로그인해 주세요.");
-        }
+        return acceptInvitation(userId, user.getEmail(), invitation);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ReceivedInvitationView> listReceivedInvitations(UUID userId) {
+        var user = requireUser(userId);
+        return invitations.findByEmailIgnoreCaseAndAcceptedAtIsNullAndRevokedAtIsNullAndDeclinedAtIsNullAndExpiresAtAfterOrderByCreatedAtDesc(
+                        user.getEmail(), Instant.now()).stream()
+                .map(invitation -> {
+                    var space = requireSpace(invitation.getSpaceId());
+                    var inviter = requireUser(invitation.getInvitedBy());
+                    return ReceivedInvitationView.from(invitation, space, inviter.getDisplayName());
+                }).toList();
+    }
+
+    @Transactional
+    public SpaceView acceptReceivedInvitation(UUID userId, UUID invitationId) {
+        var user = requireUser(userId);
+        var invitation = invitations.findById(invitationId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "INVITATION_NOT_FOUND", "초대를 찾을 수 없습니다."));
+        return acceptInvitation(userId, user.getEmail(), invitation);
+    }
+
+    @Transactional
+    public InvitationSummaryView declineReceivedInvitation(UUID userId, UUID invitationId) {
+        var user = requireUser(userId);
+        var invitation = invitations.findById(invitationId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "INVITATION_NOT_FOUND", "초대를 찾을 수 없습니다."));
+        requireActiveInvitationForEmail(invitation, user.getEmail());
+        invitation.decline();
+        return InvitationSummaryView.from(invitation);
+    }
+
+    private SpaceView acceptInvitation(UUID userId, String email, Invitation invitation) {
+        requireActiveInvitationForEmail(invitation, email);
         if (members.findBySpaceIdAndUserIdAndStatus(invitation.getSpaceId(), userId, "ACTIVE").isEmpty()) {
             members.save(new SpaceMember(invitation.getSpaceId(), userId, invitation.getRole()));
         }
@@ -104,6 +147,15 @@ public class SpaceService {
         var space = spaces.findById(invitation.getSpaceId())
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "SPACE_NOT_FOUND", "공간을 찾을 수 없습니다."));
         return SpaceView.from(space, invitation.getRole());
+    }
+
+    private void requireActiveInvitationForEmail(Invitation invitation, String email) {
+        if (!invitation.isActive()) {
+            throw new ApiException(HttpStatus.GONE, "INVITATION_EXPIRED", "초대가 만료되었거나 취소되었습니다.");
+        }
+        if (!invitation.getEmail().equalsIgnoreCase(email)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "INVITATION_EMAIL_MISMATCH", "초대받은 이메일 계정으로 로그인해 주세요.");
+        }
     }
 
     @Transactional(readOnly = true)
@@ -258,7 +310,7 @@ public class SpaceService {
     }
 
     public record InvitationView(UUID id, UUID spaceId, String email, SpaceRole role, Instant expiresAt,
-                                 String oneTimeToken) {}
+                                 String oneTimeToken, boolean emailSent) {}
 
     public record MemberView(UUID userId, String displayName, String email, SpaceRole role, Instant joinedAt,
                              boolean currentUser) {}
@@ -268,6 +320,14 @@ public class SpaceService {
         static InvitationSummaryView from(Invitation invitation) {
             return new InvitationSummaryView(invitation.getId(), invitation.getSpaceId(), invitation.getEmail(),
                     invitation.getRole(), invitation.getExpiresAt(), invitation.status(), invitation.getCreatedAt());
+        }
+    }
+
+    public record ReceivedInvitationView(UUID id, UUID spaceId, String spaceName, SpaceType spaceType,
+                                         SpaceRole role, String invitedByName, Instant expiresAt, Instant createdAt) {
+        static ReceivedInvitationView from(Invitation invitation, Space space, String invitedByName) {
+            return new ReceivedInvitationView(invitation.getId(), space.getId(), space.getName(), space.getType(),
+                    invitation.getRole(), invitedByName, invitation.getExpiresAt(), invitation.getCreatedAt());
         }
     }
 }

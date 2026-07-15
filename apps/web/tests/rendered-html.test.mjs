@@ -24,7 +24,7 @@ test("server-renders the MoaDay entry experience", async () => {
 });
 
 test("removes starter preview code and ships product metadata", async () => {
-  const [page, layout, packageJson, manifest, app, calendar, shared, coupons, settings, pagination, invitationPage] = await Promise.all([
+  const [page, layout, packageJson, manifest, app, calendar, shared, coupons, settings, pagination, invitationPage, modalPortal] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
@@ -36,6 +36,7 @@ test("removes starter preview code and ships product metadata", async () => {
     readFile(new URL("../app/components/SettingsView.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/components/Pagination.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/invite/[token]/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/ModalPortal.tsx", import.meta.url), "utf8"),
   ]);
 
   assert.match(page, /MoaDayApp/);
@@ -51,12 +52,23 @@ test("removes starter preview code and ships product metadata", async () => {
   assert.match(app, /공간 탈퇴/);
   assert.match(app, /공간 삭제/);
   assert.match(app, /감사 기록/);
-  assert.match(calendar, /반복 일정 전체 편집/);
+  assert.match(calendar, /반복 일정 상세/);
   assert.match(calendar, /참석자/);
   assert.match(calendar, /알림/);
   assert.match(calendar, /연결 자료/);
   assert.match(calendar, /공유글·첨부파일·쿠폰/);
   assert.match(calendar, /파일 받기/);
+  assert.match(calendar, /ICS 내보내기/);
+  assert.match(calendar, /ICS 가져오기/);
+  assert.match(calendar, /ModalPortal/);
+  assert.match(app, /ModalPortal/);
+  assert.match(shared, /ModalPortal/);
+  assert.match(coupons, /ModalPortal/);
+  assert.match(modalPortal, /createPortal/);
+  assert.match(modalPortal, /document\.body/);
+  assert.match(calendar, /이 회차만/);
+  assert.match(calendar, /전체 반복 일정/);
+  assert.match(calendar, /시간대 기준으로 저장/);
   assert.match(shared, /새 글/);
   assert.match(shared, /첨부파일/);
   assert.match(shared, /ImageAttachment/);
@@ -66,6 +78,16 @@ test("removes starter preview code and ships product metadata", async () => {
   assert.match(coupons, /선점 남은 시간/);
   assert.match(coupons, /상태 정정/);
   assert.match(coupons, /쿠폰 이력/);
+  assert.match(coupons, /쿠폰 이미지/);
+  assert.match(coupons, /원본 그대로 저장/);
+  assert.match(coupons, /바코드 값 \(선택\)/);
+  assert.match(coupons, /이미지 쿠폰은 비워둘 수 있습니다/);
+  assert.match(coupons, /CouponImagePreview/);
+  assert.match(coupons, /확대 이미지/);
+  assert.match(coupons, /이미지 보기/);
+  assert.match(coupons, /ownsClaim/);
+  assert.match(coupons, /바코드 등록됨/);
+  assert.match(coupons, /기존 바코드가 저장되어 있습니다/);
   assert.match(settings, /앱 내 알림/);
   assert.match(settings, /계정 영구 삭제/);
   assert.match(pagination, /목록 페이지/);

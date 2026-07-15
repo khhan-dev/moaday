@@ -5,6 +5,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -44,13 +45,30 @@ public class SpaceController {
     @PostMapping("/spaces/{spaceId}/invitations")
     @ResponseStatus(HttpStatus.CREATED)
     SpaceService.InvitationView invite(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID spaceId,
-                                       @Valid @RequestBody InviteRequest request) {
-        return spaceService.invite(userId(jwt), spaceId, request.email(), request.role());
+                                       @Valid @RequestBody InviteRequest request, HttpServletRequest httpRequest) {
+        return spaceService.invite(userId(jwt), spaceId, request.email(), request.role(), webBaseUrl(httpRequest));
     }
 
     @PostMapping("/invitations/accept")
     SpaceService.SpaceView accept(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody AcceptInvitationRequest request) {
         return spaceService.accept(userId(jwt), request.token());
+    }
+
+    @GetMapping("/invitations")
+    List<SpaceService.ReceivedInvitationView> receivedInvitations(@AuthenticationPrincipal Jwt jwt) {
+        return spaceService.listReceivedInvitations(userId(jwt));
+    }
+
+    @PostMapping("/invitations/{invitationId}/accept")
+    SpaceService.SpaceView acceptReceivedInvitation(@AuthenticationPrincipal Jwt jwt,
+                                                    @PathVariable UUID invitationId) {
+        return spaceService.acceptReceivedInvitation(userId(jwt), invitationId);
+    }
+
+    @PostMapping("/invitations/{invitationId}/decline")
+    SpaceService.InvitationSummaryView declineReceivedInvitation(@AuthenticationPrincipal Jwt jwt,
+                                                                 @PathVariable UUID invitationId) {
+        return spaceService.declineReceivedInvitation(userId(jwt), invitationId);
     }
 
     @GetMapping("/spaces/{spaceId}/members")
@@ -98,6 +116,22 @@ public class SpaceController {
     }
 
     private UUID userId(Jwt jwt) { return UUID.fromString(jwt.getSubject()); }
+
+    private String webBaseUrl(HttpServletRequest request) {
+        var proto = firstForwardedValue(request.getHeader("X-Forwarded-Proto"));
+        if (!"http".equalsIgnoreCase(proto) && !"https".equalsIgnoreCase(proto)) proto = request.getScheme();
+        var host = firstForwardedValue(request.getHeader("X-Forwarded-Host"));
+        if (host == null || host.isBlank()) host = request.getHeader("Host");
+        if (host == null || host.isBlank() || host.contains("\r") || host.contains("\n")) {
+            throw new IllegalArgumentException("초대 링크 주소를 확인할 수 없습니다.");
+        }
+        return proto.toLowerCase() + "://" + host;
+    }
+
+    private String firstForwardedValue(String value) {
+        if (value == null || value.isBlank()) return null;
+        return value.split(",", 2)[0].trim();
+    }
 
     record CreateSpaceRequest(@NotNull SpaceType type, @NotBlank @Size(max = 60) String name,
                               @NotBlank String timezone, @NotBlank String color) {}

@@ -42,6 +42,7 @@ class StageThreeToFiveIntegrationTest {
         var pair=pair("coupon");
         var input=new CouponService.CouponInput("아메리카노","Moa Cafe",null, Instant.now().plus(7,ChronoUnit.DAYS),"8801234567893","EAN13");
         var coupon=couponService.create(pair.owner.user().id(),pair.space.id(),input);
+        assertThat(couponService.update(pair.owner.user().id(),coupon.id(),new CouponService.CouponInput("아메리카노","Moa Cafe",null,Instant.now().plus(7,ChronoUnit.DAYS),"","")).hasBarcode()).isTrue();
         var claimed=couponService.claim(pair.member.user().id(),coupon.id());assertThat(claimed.status()).isEqualTo(CouponStatus.CLAIMED);
         assertThat(couponService.barcode(pair.member.user().id(),coupon.id()).value()).isEqualTo("8801234567893");
         assertThatThrownBy(()->couponService.claim(pair.owner.user().id(),coupon.id())).hasMessageContaining("이미 선점");
