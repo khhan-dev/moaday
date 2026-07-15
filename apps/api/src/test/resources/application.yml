@@ -20,6 +20,10 @@ couponwith:
     allowed-origins: http://localhost:3000
 
 moaday:
+  mail:
+    outbox:
+      initial-delay-ms: 3600000
+      interval-ms: 3600000
   storage:
     path: ./target/test-uploads
   automation:

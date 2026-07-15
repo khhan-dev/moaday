@@ -80,6 +80,13 @@ Copy-Item .env.example .env
 | `MAIL_STARTTLS_REQUIRED` | `false` | STARTTLS 필수 여부 |
 | `MAIL_FROM` | `no-reply@moaday.local` | 발신 주소 |
 | `MOADAY_WEB_BASE_URL` | `http://localhost:3000` | 활동 알림 메일의 상세 화면 링크 기준 주소 |
+| `MAIL_OUTBOX_INTERVAL_MS` | `10000` | Outbox 확인 간격(ms) |
+| `MAIL_OUTBOX_INITIAL_DELAY_MS` | `5000` | 서버 시작 후 첫 처리 대기 시간(ms) |
+| `MAIL_OUTBOX_BATCH_SIZE` | `20` | 한 번에 처리할 이메일 수 |
+| `MAIL_OUTBOX_MAX_ATTEMPTS` | `5` | 최종 실패 전 최대 발송 시도 수 |
+| `MAIL_OUTBOX_RETRY_BASE_SECONDS` | `60` | 첫 실패 후 재시도 대기 시간 |
+| `MAIL_OUTBOX_RETRY_MAX_SECONDS` | `3600` | 재시도 대기 시간 상한 |
+| `MAIL_OUTBOX_PROCESSING_TIMEOUT_SECONDS` | `300` | 중단된 처리 작업을 복구하는 기준 시간 |
 
 공개 저장소에는 실제 비밀번호, JWT 키, SMTP 앱 비밀번호를 절대 커밋하지 않습니다.
 
@@ -110,7 +117,7 @@ MOADAY_WEB_BASE_URL=http://localhost:3000
 docker compose up -d --build --force-recreate api web gateway
 ```
 
-새 공간 초대를 생성하거나 이메일 알림을 켠 사용자의 일정·공유글·쿠폰 활동 알림이 발생하면 수신자에게 메일 발송을 시도합니다. 활동 알림에는 `MOADAY_WEB_BASE_URL` 기준의 상세 화면 링크가 포함됩니다. 터널을 사용할 때 외부 기기에서 링크를 열려면 이 값을 현재 HTTPS 터널 주소로 설정하고 API를 재생성합니다. 이미 생성된 초대는 자동 재발송되지 않습니다.
+새 공간 초대를 생성하거나 이메일 알림을 켠 사용자의 일정·공유글·쿠폰 활동 알림이 발생하면 먼저 DB Outbox에 저장되고 별도 작업자가 SMTP 발송을 시도합니다. 활동 알림에는 `MOADAY_WEB_BASE_URL` 기준의 상세 화면 링크가 포함됩니다. 터널을 사용할 때 외부 기기에서 링크를 열려면 이 값을 현재 HTTPS 터널 주소로 설정하고 API를 재생성합니다. 공간 관리 화면에서 발송 상태를 확인하고 대기 중인 초대를 재발송할 수 있습니다.
 
 ## 7. 서비스 관리
 

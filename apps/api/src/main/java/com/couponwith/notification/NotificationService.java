@@ -2,7 +2,7 @@ package com.couponwith.notification;
 
 import com.couponwith.common.ApiException;
 import com.couponwith.identity.UserRepository;
-import com.couponwith.mail.MailDeliveryService;
+import com.couponwith.mail.EmailOutboxService;
 import com.couponwith.space.SpaceMemberRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -19,18 +19,18 @@ public class NotificationService {
     private final UserPreferenceRepository preferences;
     private final UserRepository users;
     private final SpaceMemberRepository members;
-    private final MailDeliveryService mailDelivery;
+    private final EmailOutboxService emailOutbox;
     private final String webBaseUrl;
 
     public NotificationService(NotificationRepository notifications, UserPreferenceRepository preferences,
                                UserRepository users, SpaceMemberRepository members,
-                               MailDeliveryService mailDelivery,
+                               EmailOutboxService emailOutbox,
                                @Value("${moaday.web-base-url:http://localhost:3000}") String webBaseUrl) {
         this.notifications = notifications;
         this.preferences = preferences;
         this.users = users;
         this.members = members;
-        this.mailDelivery = mailDelivery;
+        this.emailOutbox = emailOutbox;
         this.webBaseUrl = webBaseUrl.replaceAll("/+$", "");
     }
 
@@ -97,7 +97,7 @@ public class NotificationService {
             var target = publicUrl(link, spaceId);
             var body = content + (target == null ? "" : "\n\n자세히 보기: " + target)
                     + "\n\nMoaDay 알림 설정에서 이메일 수신 여부를 변경할 수 있습니다.";
-            mailDelivery.send(user.getEmail(), "[MoaDay] " + title, body);
+            emailOutbox.enqueue(spaceId, null, "ACTIVITY", user.getEmail(), "[MoaDay] " + title, body);
         });
     }
 

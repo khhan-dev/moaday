@@ -115,6 +115,20 @@ public class SpaceController {
         return spaceService.revokeInvitation(userId(jwt), spaceId, invitationId);
     }
 
+    @PostMapping("/spaces/{spaceId}/invitations/{invitationId}/resend")
+    SpaceService.InvitationView resendInvitation(@AuthenticationPrincipal Jwt jwt,
+                                                 @PathVariable UUID spaceId,
+                                                 @PathVariable UUID invitationId,
+                                                 HttpServletRequest request) {
+        return spaceService.resendInvitation(userId(jwt), spaceId, invitationId, webBaseUrl(request));
+    }
+
+    @GetMapping("/spaces/{spaceId}/email-deliveries")
+    List<com.couponwith.mail.EmailOutboxService.DeliveryView> emailDeliveries(@AuthenticationPrincipal Jwt jwt,
+                                                                              @PathVariable UUID spaceId) {
+        return spaceService.listEmailDeliveries(userId(jwt), spaceId);
+    }
+
     private UUID userId(Jwt jwt) { return UUID.fromString(jwt.getSubject()); }
 
     private String webBaseUrl(HttpServletRequest request) {

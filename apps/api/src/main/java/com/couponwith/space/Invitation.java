@@ -64,6 +64,7 @@ public class Invitation {
     public void accept() { this.acceptedAt = Instant.now(); }
     public void revoke() { this.revokedAt = Instant.now(); }
     public void decline() { this.declinedAt = Instant.now(); }
+    public void rotateToken(String tokenHash) { this.tokenHash = tokenHash; }
 
     public String status() {
         if (acceptedAt != null) return "ACCEPTED";

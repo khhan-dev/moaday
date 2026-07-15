@@ -1,6 +1,8 @@
 package com.couponwith;
 
 import com.couponwith.identity.AuthService;
+import com.couponwith.mail.EmailOutboxRepository;
+import com.couponwith.mail.EmailOutboxStatus;
 import com.couponwith.space.Invitation;
 import com.couponwith.space.InvitationRepository;
 import com.couponwith.space.SpaceRole;
@@ -23,6 +25,7 @@ class StageOneIntegrationTest {
     @Autowired AuthService authService;
     @Autowired SpaceService spaceService;
     @Autowired InvitationRepository invitationRepository;
+    @Autowired EmailOutboxRepository emailOutboxRepository;
 
     @Test
     void registrationCreatesPersonalSpaceAndAllowsFamilySpaceAndInvitation() {
@@ -34,11 +37,18 @@ class StageOneIntegrationTest {
         });
 
         var family = spaceService.create(owner.user().id(), SpaceType.FAMILY, "우리 가족", "Asia/Seoul", "orange");
-        var invitation = spaceService.invite(owner.user().id(), family.id(), "member@example.com", SpaceRole.MEMBER);
+        var invitation = spaceService.invite(owner.user().id(), family.id(), "member@example.com", SpaceRole.MEMBER,
+                "https://moaday.test");
 
         assertThat(spaceService.list(owner.user().id())).hasSize(2);
         assertThat(invitation.oneTimeToken()).isNotBlank();
         assertThat(invitation.email()).isEqualTo("member@example.com");
+        assertThat(invitation.emailQueued()).isTrue();
+        assertThat(emailOutboxRepository.findTop100BySpaceIdOrderByCreatedAtDesc(family.id()))
+                .singleElement().satisfies(mail -> {
+                    assertThat(mail.getStatus()).isEqualTo(EmailOutboxStatus.PENDING);
+                    assertThat(mail.getInvitationId()).isEqualTo(invitation.id());
+                });
     }
 
     @Test
@@ -152,5 +162,25 @@ class StageOneIntegrationTest {
         spaceService.archive(owner.user().id(), family.id());
         assertThat(spaceService.list(owner.user().id())).extracting(SpaceService.SpaceView::type)
                 .containsExactly(SpaceType.PERSONAL);
+    }
+
+    @Test
+    void pendingInvitationCanBeResentWithANewOneTimeToken() {
+        var owner = authService.register("resend-owner@example.com", "password123!", "소유자", "Asia/Seoul");
+        var recipient = authService.register("resend-member@example.com", "password123!", "수신자", "Asia/Seoul");
+        var family = spaceService.create(owner.user().id(), SpaceType.FAMILY, "재발송 가족", "Asia/Seoul", "green");
+        var original = spaceService.invite(owner.user().id(), family.id(), recipient.user().email(), SpaceRole.MEMBER,
+                "https://moaday.test");
+
+        var resent = spaceService.resendInvitation(owner.user().id(), family.id(), original.id(), "https://moaday.test");
+
+        assertThat(resent.emailQueued()).isTrue();
+        assertThat(resent.oneTimeToken()).isNotEqualTo(original.oneTimeToken());
+        assertThatThrownBy(() -> spaceService.accept(recipient.user().id(), original.oneTimeToken()))
+                .hasMessageContaining("초대를 찾을 수 없습니다");
+        assertThat(spaceService.accept(recipient.user().id(), resent.oneTimeToken()).id()).isEqualTo(family.id());
+        assertThat(emailOutboxRepository.findTop100BySpaceIdOrderByCreatedAtDesc(family.id()))
+                .hasSize(2)
+                .allMatch(item -> item.getStatus() == EmailOutboxStatus.CANCELLED);
     }
 }

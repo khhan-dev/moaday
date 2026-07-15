@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { api, AuditEntry, AuthResult, DashboardData, Invitation, InvitationSummary, ReceivedInvitation, SearchResult, Space, SpaceMember, SpaceRole, SpaceType } from "../lib/api";
+import { api, AuditEntry, AuthResult, DashboardData, EmailDelivery, Invitation, InvitationSummary, ReceivedInvitation, SearchResult, Space, SpaceMember, SpaceRole, SpaceType } from "../lib/api";
 import styles from "./CouponWithApp.module.css";
 import { CalendarView } from "./CalendarView";
 import { SharedView } from "./SharedView";
@@ -27,7 +27,7 @@ const navigation: Array<{ id: View; label: string; mark: string }> = [
   { id: "spaces", label: "공간", mark: "◎" },
   { id: "settings", label: "알림·설정", mark: "⚙" },
 ];
-const auditActionLabel:Record<string,string>={MEMBER_ROLE_CHANGED:"역할 변경",MEMBER_REMOVED:"구성원 추방",MEMBER_LEFT:"구성원 탈퇴",SPACE_ARCHIVED:"공간 삭제",FILE_DOWNLOADED:"파일 열람",COUPON_CREATED:"쿠폰 등록",COUPON_UPDATED:"쿠폰 수정",COUPON_IMAGE_UPDATED:"쿠폰 이미지 저장",COUPON_IMAGE_DELETED:"쿠폰 이미지 삭제",COUPON_CLAIMED:"쿠폰 선점",COUPON_RELEASED:"선점 해제",COUPON_AUTO_RELEASED:"자동 해제",COUPON_REVEALED:"바코드 열람",COUPON_USED:"사용 완료",COUPON_EXPIRED:"쿠폰 만료",COUPON_CORRECTED:"상태 정정"};
+const auditActionLabel:Record<string,string>={MEMBER_ROLE_CHANGED:"역할 변경",MEMBER_REMOVED:"구성원 추방",MEMBER_LEFT:"구성원 탈퇴",SPACE_ARCHIVED:"공간 삭제",INVITATION_RESENT:"초대 메일 재발송",FILE_DOWNLOADED:"파일 열람",COUPON_CREATED:"쿠폰 등록",COUPON_UPDATED:"쿠폰 수정",COUPON_IMAGE_UPDATED:"쿠폰 이미지 저장",COUPON_IMAGE_DELETED:"쿠폰 이미지 삭제",COUPON_CLAIMED:"쿠폰 선점",COUPON_RELEASED:"선점 해제",COUPON_AUTO_RELEASED:"자동 해제",COUPON_REVEALED:"바코드 열람",COUPON_USED:"사용 완료",COUPON_EXPIRED:"쿠폰 만료",COUPON_CORRECTED:"상태 정정"};
 const spaceRoleLabel=(role:SpaceRole)=>({OWNER:"소유자",ADMIN:"관리자",MEMBER:"멤버",VIEWER:"열람자"})[role];
 
 export function MoaDayApp() {
@@ -241,6 +241,7 @@ function SpacesView({ spaces, session, demo, onSpacesChange }: { spaces: Space[]
   const [spaceMembers, setSpaceMembers] = useState<SpaceMember[]>([]);
   const [spaceInvitations, setSpaceInvitations] = useState<InvitationSummary[]>([]);
   const [spaceAudits,setSpaceAudits]=useState<AuditEntry[]>([]);
+  const [emailDeliveries,setEmailDeliveries]=useState<EmailDelivery[]>([]);
   const [createdInvitation, setCreatedInvitation] = useState<Invitation | null>(null);
   const [managementLoading, setManagementLoading] = useState(false);
   const [error, setError] = useState("");
@@ -265,10 +266,11 @@ function SpacesView({ spaces, session, demo, onSpacesChange }: { spaces: Space[]
     const input = { email: String(form.get("email")), role: String(form.get("role")) as SpaceRole };
     try {
       const created = demo
-        ? { id: crypto.randomUUID(), spaceId: managedSpace.id, email: input.email, role: input.role, expiresAt: new Date(new Date().getTime() + 604800000).toISOString(), oneTimeToken: "demo-invitation-token", emailSent: true }
+        ? { id: crypto.randomUUID(), spaceId: managedSpace.id, email: input.email, role: input.role, expiresAt: new Date(new Date().getTime() + 604800000).toISOString(), oneTimeToken: "demo-invitation-token", emailQueued: true }
         : await api.invite(session!.accessToken, managedSpace.id, input);
       setCreatedInvitation(created);
       setSpaceInvitations((current) => [{ ...created, status: "PENDING", createdAt: new Date().toISOString() }, ...current]);
+      if (!demo) setEmailDeliveries(await api.listEmailDeliveries(session!.accessToken, managedSpace.id));
       setError("");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "초대를 만들지 못했습니다."); }
   }
@@ -287,15 +289,18 @@ function SpacesView({ spaces, session, demo, onSpacesChange }: { spaces: Space[]
         ]);
         setSpaceInvitations(canManage ? [{ id: "demo-invite", spaceId: space.id, email: "friend@moaday.test", role: "VIEWER", expiresAt: new Date(new Date().getTime() + 604800000).toISOString(), status: "PENDING", createdAt: new Date().toISOString() }] : []);
         setSpaceAudits(canManage?[{id:"demo-audit",spaceId:space.id,actorId:"demo-owner",actorName:"김모아",action:"MEMBER_ROLE_CHANGED",resourceType:"MEMBER",summary:"이하루 역할 변경: VIEWER → MEMBER",createdAt:new Date().toISOString()}]:[]);
+        setEmailDeliveries(canManage?[{id:"demo-mail",invitationId:"demo-invite",category:"INVITATION",recipient:"friend@moaday.test",subject:"[MoaDay] 친구 공간에 초대되었습니다",status:"SENT",attemptCount:1,maxAttempts:5,sentAt:new Date().toISOString(),createdAt:new Date().toISOString()}]:[]);
       } else {
-        const [loadedMembers, loadedInvitations,loadedAudits] = await Promise.all([
+        const [loadedMembers, loadedInvitations,loadedAudits,loadedDeliveries] = await Promise.all([
           api.listMembers(session!.accessToken, space.id),
           canManage ? api.listInvitations(session!.accessToken, space.id) : Promise.resolve([]),
           canManage ? api.listAuditLogs(session!.accessToken,space.id) : Promise.resolve([]),
+          canManage ? api.listEmailDeliveries(session!.accessToken,space.id) : Promise.resolve([]),
         ]);
         setSpaceMembers(loadedMembers);
         setSpaceInvitations(loadedInvitations);
         setSpaceAudits(loadedAudits);
+        setEmailDeliveries(loadedDeliveries);
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "공간 정보를 불러오지 못했습니다.");
@@ -329,15 +334,19 @@ function SpacesView({ spaces, session, demo, onSpacesChange }: { spaces: Space[]
     try {
       const revoked = demo ? { ...invitation, status: "REVOKED" as const } : await api.revokeInvitation(session!.accessToken, managedSpace.id, invitation.id);
       setSpaceInvitations((current) => current.map((item) => item.id === revoked.id ? revoked : item));
+      if (!demo) setEmailDeliveries(await api.listEmailDeliveries(session!.accessToken, managedSpace.id));
       setError("");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "초대를 취소하지 못했습니다."); }
   }
+
+  async function resendInvitation(invitation:InvitationSummary){if(!managedSpace)return;try{const resent=demo?{id:invitation.id,spaceId:managedSpace.id,email:invitation.email,role:invitation.role,expiresAt:invitation.expiresAt,oneTimeToken:"demo-resent-token",emailQueued:true}:await api.resendInvitation(session!.accessToken,managedSpace.id,invitation.id);setCreatedInvitation(resent);if(!demo)setEmailDeliveries(await api.listEmailDeliveries(session!.accessToken,managedSpace.id));setError("")}catch(reason){setError(reason instanceof Error?reason.message:"초대 메일을 재발송하지 못했습니다.")}}
 
   async function exitSpace(){if(!managedSpace)return;const deleting=managedSpace.role==="OWNER";const prompt=deleting?`“${managedSpace.name}” 공간을 삭제할까요? 모든 구성원의 접근이 즉시 종료됩니다.`:`“${managedSpace.name}” 공간에서 탈퇴할까요?`;if(!window.confirm(prompt))return;try{if(!demo){if(deleting)await api.archiveSpace(session!.accessToken,managedSpace.id);else await api.leaveSpace(session!.accessToken,managedSpace.id)}onSpacesChange(spaces.filter(item=>item.id!==managedSpace.id));setManagedSpace(null);setError("")}catch(reason){setError(reason instanceof Error?reason.message:deleting?"공간을 삭제하지 못했습니다.":"공간에서 탈퇴하지 못했습니다.")}}
 
   const canManage = managedSpace?.role === "OWNER" || managedSpace?.role === "ADMIN";
   const roleLabel = spaceRoleLabel;
   const invitationStatusLabel = (status: InvitationSummary["status"]) => ({ PENDING: "대기 중", ACCEPTED: "수락됨", DECLINED:"거절됨", REVOKED: "취소됨", EXPIRED: "만료됨" })[status];
+  const deliveryStatusLabel=(status:EmailDelivery["status"])=>({PENDING:"발송 대기",PROCESSING:"발송 중",RETRY:"재시도 대기",SENT:"발송 완료",DEAD:"최종 실패",CANCELLED:"발송 취소"})[status];
 
   return (
     <section className={styles.card}>
@@ -357,9 +366,10 @@ function SpacesView({ spaces, session, demo, onSpacesChange }: { spaces: Space[]
             return <div className={styles.memberRow} key={member.userId}><span className={styles.avatar}>{member.displayName.slice(0, 1)}</span><div><strong>{member.displayName}{member.currentUser ? " (나)" : ""}</strong><small>{member.email}</small></div>{editable ? <select aria-label={`${member.displayName} 역할`} value={member.role} onChange={(event) => changeRole(member, event.target.value as SpaceRole)}>{managedSpace.role === "OWNER" && <option value="ADMIN">관리자</option>}<option value="MEMBER">멤버</option><option value="VIEWER">열람자</option></select> : <span className={styles.statusChip}>{roleLabel(member.role)}</span>}{editable && <button className={styles.dangerButton} type="button" onClick={() => removeMember(member)}>추방</button>}</div>;
           })}</div></section>
 
-          {canManage && <section><div className={styles.managementHeading}><div><h3>새 구성원 초대</h3><p>초대 링크는 7일 동안 유효합니다.</p></div></div>{createdInvitation ? <div className={styles.inviteResult}><strong>{createdInvitation.email}</strong><p className={styles.inviteDelivery} data-sent={createdInvitation.emailSent}>{createdInvitation.emailSent?"초대 메일을 발송했습니다.":"메일을 발송하지 못했습니다. 아래 링크를 직접 전달해 주세요."}</p><code>{`${location.origin}/?invite=${encodeURIComponent(createdInvitation.oneTimeToken)}`}</code><button className={styles.primaryButtonLarge} type="button" onClick={() => navigator.clipboard?.writeText(`${location.origin}/?invite=${encodeURIComponent(createdInvitation.oneTimeToken)}`)}>초대 링크 복사</button><button className={styles.textButton} type="button" onClick={() => setCreatedInvitation(null)}>다른 구성원 초대</button></div> : <form className={`${styles.form} ${styles.inlineInviteForm}`} onSubmit={invite}><label>이메일<input required type="email" name="email" placeholder="member@example.com" /></label><label>역할<select name="role" defaultValue="MEMBER"><option value="MEMBER">멤버</option>{managedSpace.role === "OWNER" && <option value="ADMIN">관리자</option>}<option value="VIEWER">열람자</option></select></label><button className={styles.primaryButtonLarge}>초대 만들기</button></form>}</section>}
+          {canManage && <section><div className={styles.managementHeading}><div><h3>새 구성원 초대</h3><p>초대 링크는 7일 동안 유효합니다.</p></div></div>{createdInvitation ? <div className={styles.inviteResult}><strong>{createdInvitation.email}</strong><p className={styles.inviteDelivery} data-sent={createdInvitation.emailQueued}>{createdInvitation.emailQueued?"초대 메일을 발송 대기열에 등록했습니다.":"메일을 등록하지 못했습니다. 아래 링크를 직접 전달해 주세요."}</p><code>{`${location.origin}/?invite=${encodeURIComponent(createdInvitation.oneTimeToken)}`}</code><button className={styles.primaryButtonLarge} type="button" onClick={() => navigator.clipboard?.writeText(`${location.origin}/?invite=${encodeURIComponent(createdInvitation.oneTimeToken)}`)}>초대 링크 복사</button><button className={styles.textButton} type="button" onClick={() => setCreatedInvitation(null)}>다른 구성원 초대</button></div> : <form className={`${styles.form} ${styles.inlineInviteForm}`} onSubmit={invite}><label>이메일<input required type="email" name="email" placeholder="member@example.com" /></label><label>역할<select name="role" defaultValue="MEMBER"><option value="MEMBER">멤버</option>{managedSpace.role === "OWNER" && <option value="ADMIN">관리자</option>}<option value="VIEWER">열람자</option></select></label><button className={styles.primaryButtonLarge}>초대 만들기</button></form>}</section>}
 
-          {canManage && <section><div className={styles.managementHeading}><div><h3>초대 이력</h3><p>만료되거나 취소된 초대도 확인할 수 있습니다.</p></div></div><div className={styles.invitationList}>{spaceInvitations.length === 0 ? <p className={styles.empty}>아직 발급된 초대가 없습니다.</p> : spaceInvitations.map((invitation) => <div key={invitation.id}><div><strong>{invitation.email}</strong><small>{roleLabel(invitation.role)} · {new Date(invitation.expiresAt).toLocaleDateString("ko-KR")}까지</small></div><span className={styles.statusChip} data-status={invitation.status}>{invitationStatusLabel(invitation.status)}</span>{invitation.status === "PENDING" && <button className={styles.dangerButton} type="button" onClick={() => revokeInvitation(invitation)}>취소</button>}</div>)}</div></section>}
+          {canManage && <section><div className={styles.managementHeading}><div><h3>초대 이력</h3><p>대기 중인 초대는 새 일회용 링크로 재발송할 수 있습니다.</p></div></div><div className={styles.invitationList}>{spaceInvitations.length === 0 ? <p className={styles.empty}>아직 발급된 초대가 없습니다.</p> : spaceInvitations.map((invitation) => <div key={invitation.id}><div><strong>{invitation.email}</strong><small>{roleLabel(invitation.role)} · {new Date(invitation.expiresAt).toLocaleDateString("ko-KR")}까지</small></div><span className={styles.statusChip} data-status={invitation.status}>{invitationStatusLabel(invitation.status)}</span>{invitation.status === "PENDING" && <span className={styles.invitationActions}><button type="button" onClick={() => void resendInvitation(invitation)}>재발송</button><button className={styles.dangerButton} type="button" onClick={() => revokeInvitation(invitation)}>취소</button></span>}</div>)}</div></section>}
+          {canManage&&<section><div className={styles.managementHeading}><div><h3>이메일 발송 이력</h3><p>최근 100건의 대기·성공·재시도·실패 상태를 확인합니다.</p></div></div><div className={styles.deliveryList}>{emailDeliveries.length===0?<p className={styles.empty}>아직 이메일 발송 기록이 없습니다.</p>:emailDeliveries.map(item=><div key={item.id}><div><strong>{item.recipient}</strong><small>{item.subject}</small>{item.lastError&&<em>{item.lastError}</em>}</div><span className={styles.statusChip} data-status={item.status}>{deliveryStatusLabel(item.status)}</span><time>{item.attemptCount}/{item.maxAttempts}회<br/>{new Date(item.sentAt??item.nextAttemptAt??item.createdAt).toLocaleString("ko-KR")}</time></div>)}</div></section>}
           {canManage&&<section><div className={styles.managementHeading}><div><h3>감사 기록</h3><p>최근 중요 작업 100건을 확인합니다.</p></div></div><div className={styles.auditList}>{spaceAudits.length===0?<p className={styles.empty}>아직 기록된 중요 작업이 없습니다.</p>:spaceAudits.map(entry=><div key={entry.id}><i/><span><strong>{auditActionLabel[entry.action]??entry.action}</strong><small>{entry.summary}</small>{entry.reason&&<em>사유: {entry.reason}</em>}</span><time>{entry.actorName}<br/>{new Date(entry.createdAt).toLocaleString("ko-KR")}</time></div>)}</div></section>}
           <section className={styles.spaceLifecycle}><div><h3>{managedSpace.role==="OWNER"?"공간 삭제":"공간 탈퇴"}</h3><p>{managedSpace.role==="OWNER"?"모든 구성원의 접근을 종료하고 공간을 보관 처리합니다.":"내 접근 권한을 종료합니다. 다시 참여하려면 새 초대가 필요합니다."}</p></div><button type="button" className={styles.dangerOutlineButton} onClick={exitSpace}>{managedSpace.role==="OWNER"?"공간 삭제":"공간 탈퇴"}</button></section>
         </div>}

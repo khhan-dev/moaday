@@ -3,6 +3,7 @@ package com.couponwith.space;
 import com.couponwith.audit.AuditService;
 import com.couponwith.common.ApiException;
 import com.couponwith.identity.UserRepository;
+import com.couponwith.mail.EmailOutboxService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,17 +27,19 @@ public class SpaceService {
     private final UserRepository users;
     private final AuditService audits;
     private final InvitationMailService invitationMail;
+    private final EmailOutboxService emailOutbox;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public SpaceService(SpaceRepository spaces, SpaceMemberRepository members,
                         InvitationRepository invitations, UserRepository users, AuditService audits,
-                        InvitationMailService invitationMail) {
+                        InvitationMailService invitationMail, EmailOutboxService emailOutbox) {
         this.spaces = spaces;
         this.members = members;
         this.invitations = invitations;
         this.users = users;
         this.audits = audits;
         this.invitationMail = invitationMail;
+        this.emailOutbox = emailOutbox;
     }
 
     @Transactional(readOnly = true)
@@ -94,10 +97,10 @@ public class SpaceService {
         var inviter = requireUser(actorId);
         var invitationUrl = webBaseUrl == null ? null
                 : webBaseUrl.replaceAll("/+$", "") + "/?invite=" + rawToken;
-        var emailSent = invitationMail.send(email, inviter.getDisplayName(), space.getName(), role,
-                invitation.getExpiresAt(), invitationUrl);
+        var emailQueued = invitationMail.enqueue(spaceId, invitation.getId(), email, inviter.getDisplayName(),
+                space.getName(), role, invitation.getExpiresAt(), invitationUrl);
         return new InvitationView(invitation.getId(), invitation.getSpaceId(), email, role,
-                invitation.getExpiresAt(), rawToken, emailSent);
+                invitation.getExpiresAt(), rawToken, emailQueued);
     }
 
     @Transactional
@@ -134,12 +137,14 @@ public class SpaceService {
         var invitation = invitations.findById(invitationId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "INVITATION_NOT_FOUND", "초대를 찾을 수 없습니다."));
         requireActiveInvitationForEmail(invitation, user.getEmail());
+        emailOutbox.cancelInvitationDeliveries(invitation.getId());
         invitation.decline();
         return InvitationSummaryView.from(invitation);
     }
 
     private SpaceView acceptInvitation(UUID userId, String email, Invitation invitation) {
         requireActiveInvitationForEmail(invitation, email);
+        emailOutbox.cancelInvitationDeliveries(invitation.getId());
         if (members.findBySpaceIdAndUserIdAndStatus(invitation.getSpaceId(), userId, "ACTIVE").isEmpty()) {
             members.save(new SpaceMember(invitation.getSpaceId(), userId, invitation.getRole()));
         }
@@ -227,7 +232,10 @@ public class SpaceService {
         audits.record(spaceId,actorId,"SPACE_ARCHIVED","SPACE",spaceId,space.getName()+" 공간 삭제",null);
         invitations.findBySpaceIdOrderByCreatedAtDesc(spaceId).stream()
                 .filter(Invitation::isActive)
-                .forEach(Invitation::revoke);
+                .forEach(invitation -> {
+                    emailOutbox.cancelInvitationDeliveries(invitation.getId());
+                    invitation.revoke();
+                });
         members.findBySpaceIdAndStatusOrderByJoinedAt(spaceId, "ACTIVE").forEach(SpaceMember::remove);
         space.archive();
     }
@@ -249,8 +257,38 @@ public class SpaceService {
         if (!invitation.isActive()) {
             throw new ApiException(HttpStatus.CONFLICT, "INVITATION_NOT_PENDING", "대기 중인 초대만 취소할 수 있습니다.");
         }
+        emailOutbox.cancelInvitationDeliveries(invitation.getId());
         invitation.revoke();
         return InvitationSummaryView.from(invitation);
+    }
+
+    @Transactional
+    public InvitationView resendInvitation(UUID actorId, UUID spaceId, UUID invitationId, String webBaseUrl) {
+        requireManager(spaceId, actorId);
+        var invitation = invitations.findById(invitationId)
+                .filter(item -> item.getSpaceId().equals(spaceId))
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "INVITATION_NOT_FOUND", "초대를 찾을 수 없습니다."));
+        if (!invitation.isActive()) {
+            throw new ApiException(HttpStatus.CONFLICT, "INVITATION_NOT_PENDING", "대기 중인 초대만 재발송할 수 있습니다.");
+        }
+        emailOutbox.cancelInvitationDeliveries(invitation.getId());
+        var rawToken = generateToken();
+        invitation.rotateToken(hash(rawToken));
+        var space = requireSpace(spaceId);
+        var inviter = requireUser(actorId);
+        var invitationUrl = webBaseUrl == null ? null : webBaseUrl.replaceAll("/+$", "") + "/?invite=" + rawToken;
+        var emailQueued = invitationMail.enqueue(spaceId, invitation.getId(), invitation.getEmail(),
+                inviter.getDisplayName(), space.getName(), invitation.getRole(), invitation.getExpiresAt(), invitationUrl);
+        audits.record(spaceId, actorId, "INVITATION_RESENT", "INVITATION", invitationId,
+                invitation.getEmail() + " 초대 메일 재발송 요청", null);
+        return new InvitationView(invitation.getId(), spaceId, invitation.getEmail(), invitation.getRole(),
+                invitation.getExpiresAt(), rawToken, emailQueued);
+    }
+
+    @Transactional(readOnly = true)
+    public List<EmailOutboxService.DeliveryView> listEmailDeliveries(UUID actorId, UUID spaceId) {
+        requireManager(spaceId, actorId);
+        return emailOutbox.list(spaceId);
     }
 
     private SpaceMember requireManager(UUID spaceId, UUID actorId) {
@@ -310,7 +348,7 @@ public class SpaceService {
     }
 
     public record InvitationView(UUID id, UUID spaceId, String email, SpaceRole role, Instant expiresAt,
-                                 String oneTimeToken, boolean emailSent) {}
+                                 String oneTimeToken, boolean emailQueued) {}
 
     public record MemberView(UUID userId, String displayName, String email, SpaceRole role, Instant joinedAt,
                              boolean currentUser) {}

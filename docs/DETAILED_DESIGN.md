@@ -2,7 +2,7 @@
 
 ## 1. 문서 목적
 
-이 문서는 MoaDay 저장소의 현재 구현 구조를 설명합니다. 미래 지향 설계 초안인 `PRODUCT_DESIGN.md`, `TECHNICAL_SPEC.md`와 달리 실제 코드, Docker 구성과 Flyway V1~V12를 기준으로 합니다.
+이 문서는 MoaDay 저장소의 현재 구현 구조를 설명합니다. 미래 지향 설계 초안인 `PRODUCT_DESIGN.md`, `TECHNICAL_SPEC.md`와 달리 실제 코드, Docker 구성과 Flyway V1~V13을 기준으로 합니다.
 
 ## 2. 기술 스택
 
@@ -200,7 +200,9 @@ sequenceDiagram
     S->>D: 권한·중복 초대 확인
     S->>S: 32바이트 임의 토큰 생성
     S->>D: SHA-256 토큰 해시와 7일 만료 저장
-    S->>M: 일회용 원문 토큰이 포함된 링크 발송
+    S->>D: 일회용 링크가 포함된 Outbox 저장
+    D-->>S: 업무 데이터와 함께 commit
+    D->>M: 별도 작업자가 Outbox claim 후 SMTP 발송
     M-->>R: 초대 메일
     R->>S: 로그인 후 수락 또는 거절
     S->>D: 이메일 일치·유효성 확인 후 상태 변경
@@ -245,6 +247,8 @@ sequenceDiagram
 - 만료 시각이 지난 쿠폰 자동 만료
 - 일정 리마인더 발생 계산과 사용자별 인앱·이메일 알림
 - `event_reminder_deliveries` 유니크 제약으로 같은 회차·사용자 중복 방지
+- 이메일 Outbox 대기 작업 발송과 지수형 실패 재시도
+- 처리 중 중단된 Outbox를 제한 시간 이후 재시도 상태로 복구
 
 ## 10. API 설계
 
@@ -255,7 +259,8 @@ sequenceDiagram
 | 인증 | `POST /auth/register`, `POST /auth/login` | 가입·로그인 |
 | 공간 | `GET/POST /spaces`, `DELETE /spaces/{id}` | 공간 목록·생성·삭제 |
 | 멤버 | `GET/PATCH/DELETE /spaces/{id}/members/...` | 역할·추방 |
-| 초대 | `POST /spaces/{id}/invitations`, `GET /invitations` | 발급·받은 초대 |
+| 초대 | `POST /spaces/{id}/invitations`, `POST /spaces/{id}/invitations/{inviteId}/resend` | 발급·재발송 |
+| 이메일 | `GET /spaces/{id}/email-deliveries` | 관리자용 최근 발송 이력 |
 | 캘린더 | `GET/POST /spaces/{id}/calendars` | 다중 캘린더 |
 | 일정 | `GET /spaces/{id}/events`, `POST /calendars/{id}/events` | 기간 조회·생성 |
 | 회차 | `PATCH/DELETE /events/{id}/occurrences` | 특정 회차 변경·취소 |
@@ -299,7 +304,15 @@ sequenceDiagram
 - Gmail 앱 비밀번호 사용
 - 연결·읽기·쓰기 시간 제한 기본 10초
 
-`InvitationMailService`는 현재 접속 주소로 만든 수락 링크를 구성하고, `NotificationService`는 활동 대상 상세 링크를 구성합니다. 실제 SMTP 메시지 생성·발신 주소 적용·실패 처리는 `MailDeliveryService`가 공통으로 담당합니다. SMTP Outbox 재시도와 발송 이력은 다음 보완 대상입니다.
+`InvitationMailService`는 현재 접속 주소로 만든 수락 링크를 구성하고, `NotificationService`는 활동 대상 상세 링크를 구성합니다. 두 서비스 모두 업무 트랜잭션에서 `email_outbox`에 메시지를 저장합니다. `EmailOutboxProcessor`는 별도 트랜잭션으로 대상을 claim한 후 트랜잭션 밖에서 `MailDeliveryService`를 호출하고 결과를 다시 저장합니다.
+
+- 상태: `PENDING → PROCESSING → SENT`, 실패 시 `RETRY → DEAD`, 초대 변경 시 `CANCELLED`
+- 기본 처리: 10초 간격, 회당 20건, 최대 5회
+- 재시도: 60초부터 지수형 증가, 최대 1시간
+- 장애 복구: 5분 이상 `PROCESSING`인 작업을 재시도 대기로 복구
+- 민감정보 최소화: 성공·최종 실패·취소 시 본문을 제거해 일회용 초대 토큰을 장기 보관하지 않음
+- 관리자 화면: 공간별 최근 100건의 수신자, 상태, 시도 횟수, 다음 시각과 오류 확인
+- 초대 재발송: 기존 대기 메일을 취소하고 토큰 해시를 새 값으로 교체해 이전 링크를 즉시 무효화
 
 ## 11.1 상세 화면 딥링크
 
@@ -313,7 +326,7 @@ sequenceDiagram
 ### PostgreSQL
 
 - `moaday-postgres` 이름 있는 볼륨
-- Flyway가 시작 시 V1~V12를 순차 적용
+- Flyway가 시작 시 V1~V13을 순차 적용
 - Hibernate는 `ddl-auto=validate`로 엔티티·스키마 일치만 검사
 
 ### 업로드 파일
@@ -340,7 +353,8 @@ sequenceDiagram
 - 역할별 허용·거부와 공간 격리
 - 반복 일정, 회차 예외, ICS UID와 시간대
 - 쿠폰 이미지, 선택적 바코드, 이력과 정정
-- 초대 메일 메시지 구성과 실패 반환
+- 초대 메일 Outbox 구성, 토큰 교체와 재발송
+- Outbox 성공·실패 처리와 지수형 재시도
 
 ### Web
 
@@ -368,9 +382,8 @@ sequenceDiagram
 
 ## 15. 현재 기술 부채와 개선 순서
 
-1. SMTP 발송을 트랜잭션 밖 Outbox로 옮기고 실패 재시도·발송 이력을 추가합니다.
-2. 교차 출처 개발을 위해 CORS 허용 메서드에 `PUT`을 추가합니다.
-3. 목록 API를 서버 페이지네이션으로 변경합니다.
-4. 첨부파일을 S3 호환 저장소와 악성코드 검사 파이프라인으로 확장합니다.
-5. JWT 키를 Secret Manager로 이동하고 refresh token 또는 안전한 쿠키 세션을 검토합니다.
-6. CI에서 API·웹·E2E·컨테이너 취약점 검사를 자동화합니다.
+1. 교차 출처 개발을 위해 CORS 허용 메서드에 `PUT`을 추가합니다.
+2. 목록 API를 서버 페이지네이션으로 변경합니다.
+3. 첨부파일을 S3 호환 저장소와 악성코드 검사 파이프라인으로 확장합니다.
+4. JWT 키를 Secret Manager로 이동하고 refresh token 또는 안전한 쿠키 세션을 검토합니다.
+5. CI에서 API·웹·E2E·컨테이너 취약점 검사를 자동화합니다.

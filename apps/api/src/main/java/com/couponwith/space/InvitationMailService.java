@@ -1,27 +1,30 @@
 package com.couponwith.space;
 
-import com.couponwith.mail.MailDeliveryService;
+import com.couponwith.mail.EmailOutboxService;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.UUID;
 
 @Service
 public class InvitationMailService {
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy년 M월 d일 HH:mm")
             .withZone(ZoneId.of("Asia/Seoul"));
 
-    private final MailDeliveryService mailDelivery;
+    private final EmailOutboxService outbox;
 
-    public InvitationMailService(MailDeliveryService mailDelivery) {
-        this.mailDelivery = mailDelivery;
+    public InvitationMailService(EmailOutboxService outbox) {
+        this.outbox = outbox;
     }
 
-    public boolean send(String recipient, String inviterName, String spaceName, SpaceRole role,
+    public boolean enqueue(UUID spaceId, UUID invitationId, String recipient, String inviterName,
+                        String spaceName, SpaceRole role,
                         Instant expiresAt, String invitationUrl) {
         if (invitationUrl == null || invitationUrl.isBlank()) return false;
-        return mailDelivery.send(recipient, "[MoaDay] " + spaceName + " 공간에 초대되었습니다", """
+        outbox.enqueue(spaceId, invitationId, "INVITATION", recipient,
+                "[MoaDay] " + spaceName + " 공간에 초대되었습니다", """
                     %s 님이 MoaDay의 '%s' 공간에 초대했습니다.
 
                     역할: %s
@@ -32,6 +35,7 @@ public class InvitationMailService {
 
                     본인이 요청하지 않은 초대라면 거절하거나 이 메일을 무시해 주세요.
                     """.formatted(inviterName, spaceName, roleLabel(role), DATE_FORMAT.format(expiresAt), invitationUrl));
+        return true;
     }
 
     private String roleLabel(SpaceRole role) {
