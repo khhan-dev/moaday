@@ -29,14 +29,17 @@ public class AuthService {
     private final SpaceMemberRepository members;
     private final PasswordEncoder passwordEncoder;
     private final JwtEncoder jwtEncoder;
+    private final LoginProtectionService loginProtection;
 
     public AuthService(UserRepository users, SpaceRepository spaces, SpaceMemberRepository members,
-                       PasswordEncoder passwordEncoder, JwtEncoder jwtEncoder) {
+                       PasswordEncoder passwordEncoder, JwtEncoder jwtEncoder,
+                       LoginProtectionService loginProtection) {
         this.users = users;
         this.spaces = spaces;
         this.members = members;
         this.passwordEncoder = passwordEncoder;
         this.jwtEncoder = jwtEncoder;
+        this.loginProtection = loginProtection;
     }
 
     @Transactional
@@ -53,13 +56,29 @@ public class AuthService {
         return issueToken(user);
     }
 
-    @Transactional(readOnly = true)
     public AuthResult login(String rawEmail, String password) {
-        var user = users.findByEmailIgnoreCase(normalizeEmail(rawEmail))
-                .orElseThrow(this::invalidCredentials);
-        if (!user.isActive() || !passwordEncoder.matches(password, user.getPasswordHash())) {
-            throw invalidCredentials();
+        var decision = loginProtection.authenticate(normalizeEmail(rawEmail), password);
+        if (decision.status() == LoginProtectionService.Status.LOCKED) {
+            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "LOGIN_TEMPORARILY_LOCKED",
+                    "로그인 시도가 많아 계정이 잠시 잠겼습니다. 잠시 후 다시 시도하거나 비밀번호를 재설정해 주세요.");
         }
+        if (decision.status() != LoginProtectionService.Status.AUTHENTICATED) throw invalidCredentials();
+        return issueToken(decision.user());
+    }
+
+    @Transactional
+    public AuthResult changePassword(UUID userId, String currentPassword, String newPassword) {
+        var user = users.findByIdForUpdate(userId)
+                .filter(UserAccount::isActive)
+                .orElseThrow(this::invalidCredentials);
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_PASSWORD", "현재 비밀번호가 올바르지 않습니다.");
+        }
+        if (passwordEncoder.matches(newPassword, user.getPasswordHash())) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "PASSWORD_UNCHANGED",
+                    "새 비밀번호는 현재 비밀번호와 다르게 입력해 주세요.");
+        }
+        user.changePassword(passwordEncoder.encode(newPassword));
         return issueToken(user);
     }
 
@@ -73,6 +92,7 @@ public class AuthService {
                 .expiresAt(expiresAt)
                 .claim("email", user.getEmail())
                 .claim("name", user.getDisplayName())
+                .claim("security_version", user.getSecurityVersion())
                 .build();
         var header = JwsHeader.with(MacAlgorithm.HS256).build();
         var token = jwtEncoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();

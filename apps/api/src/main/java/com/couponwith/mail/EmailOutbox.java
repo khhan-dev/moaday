@@ -16,6 +16,7 @@ public class EmailOutbox {
     @Id private UUID id;
     @Column(name = "space_id") private UUID spaceId;
     @Column(name = "invitation_id") private UUID invitationId;
+    @Column(name = "password_reset_token_id") private UUID passwordResetTokenId;
     @Column(nullable = false, length = 40) private String category;
     @Column(nullable = false, length = 320) private String recipient;
     @Column(nullable = false, length = 255) private String subject;
@@ -34,9 +35,16 @@ public class EmailOutbox {
 
     public EmailOutbox(UUID id, UUID spaceId, UUID invitationId, String category, String recipient,
                        String subject, String body, int maxAttempts, Instant now) {
+        this(id, spaceId, invitationId, null, category, recipient, subject, body, maxAttempts, now);
+    }
+
+    public EmailOutbox(UUID id, UUID spaceId, UUID invitationId, UUID passwordResetTokenId,
+                       String category, String recipient, String subject, String body,
+                       int maxAttempts, Instant now) {
         this.id = id;
         this.spaceId = spaceId;
         this.invitationId = invitationId;
+        this.passwordResetTokenId = passwordResetTokenId;
         this.category = category;
         this.recipient = recipient;
         this.subject = subject;
@@ -91,7 +99,7 @@ public class EmailOutbox {
         if (status != EmailOutboxStatus.PENDING && status != EmailOutboxStatus.RETRY) return;
         status = EmailOutboxStatus.CANCELLED;
         nextAttemptAt = null;
-        lastError = "초대 상태가 변경되거나 새 링크가 발급되어 발송을 취소했습니다.";
+        lastError = "연결된 요청 상태가 변경되거나 새 링크가 발급되어 발송을 취소했습니다.";
         body = "[취소 후 본문 제거]";
         updatedAt = now;
     }
@@ -105,6 +113,7 @@ public class EmailOutbox {
     public UUID getId() { return id; }
     public UUID getSpaceId() { return spaceId; }
     public UUID getInvitationId() { return invitationId; }
+    public UUID getPasswordResetTokenId() { return passwordResetTokenId; }
     public String getCategory() { return category; }
     public String getRecipient() { return recipient; }
     public String getSubject() { return subject; }

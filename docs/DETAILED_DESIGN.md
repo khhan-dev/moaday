@@ -2,7 +2,7 @@
 
 ## 1. 문서 목적
 
-이 문서는 MoaDay 저장소의 현재 구현 구조를 설명합니다. 미래 지향 설계 초안인 `PRODUCT_DESIGN.md`, `TECHNICAL_SPEC.md`와 달리 실제 코드, Docker 구성과 Flyway V1~V13을 기준으로 합니다.
+이 문서는 MoaDay 저장소의 현재 구현 구조를 설명합니다. 미래 지향 설계 초안인 `PRODUCT_DESIGN.md`, `TECHNICAL_SPEC.md`와 달리 실제 코드, Docker 구성과 Flyway V1~V14를 기준으로 합니다.
 
 ## 2. 기술 스택
 
@@ -88,22 +88,32 @@ flowchart LR
 ### 6.1 JWT
 
 1. 회원가입 또는 로그인 성공 시 HS256 JWT를 발급합니다.
-2. `sub`에는 사용자 UUID, claim에는 이메일과 이름을 넣습니다.
+2. `sub`에는 사용자 UUID, claim에는 이메일·이름·`security_version`을 넣습니다.
 3. 만료는 발급 후 1시간입니다.
 4. `/api/v1/auth/**`, `/actuator/health` 외 요청은 Bearer JWT가 필요합니다.
 5. 서버 세션은 생성하지 않습니다.
+6. 보호 API마다 사용자 보안 버전을 확인하며 비밀번호 변경·복구 후 기존 JWT를 거부합니다.
 
 비밀번호는 Spring Security의 위임형 PasswordEncoder로 저장하며 평문을 보관하지 않습니다.
 
-### 6.2 공간 격리
+### 6.2 계정 복구와 로그인 보호
+
+- 비밀번호 찾기 응답은 가입 여부와 관계없이 동일하게 반환합니다.
+- 32바이트 무작위 토큰은 메일에만 포함하고 DB에는 SHA-256 해시만 저장합니다.
+- 복구 링크는 기본 30분, 한 번만 사용할 수 있으며 같은 계정은 60초 내 재요청을 억제합니다.
+- 새 요청·사용 완료 시 이전 대기 토큰과 Outbox 이메일을 취소합니다.
+- 로그인은 사용자 행을 잠근 뒤 실패 횟수를 기록하고 기본 5회 실패 시 15분 잠급니다.
+- 비밀번호 변경·복구 시 `security_version`을 증가시켜 다른 기기의 기존 JWT를 즉시 무효화합니다.
+
+### 6.3 공간 격리
 
 각 도메인 서비스는 자원에서 `spaceId`를 구한 뒤 `space_members`의 `ACTIVE` 멤버십을 조회합니다. 클라이언트가 전달한 공간 ID만으로 접근을 허용하지 않습니다. 접근할 수 없는 공간은 정보 노출을 줄이기 위해 404로 응답하는 경우가 많습니다.
 
-### 6.3 CORS
+### 6.4 CORS
 
 허용 출처는 `CORS_ALLOWED_ORIGINS`로 설정합니다. 로컬 Docker는 Nginx 동일 출처이므로 일반 브라우저 요청에 CORS가 개입하지 않습니다. 현재 명시된 허용 메서드에 `PUT`이 없어, 웹과 API를 서로 다른 출처로 실행하며 일정 연결 자료를 수정할 경우 보완이 필요합니다.
 
-### 6.4 파일 보안
+### 6.5 파일 보안
 
 - 파일당 최대 20MB, 게시글당 최대 20개
 - 실행 파일·스크립트·HTML·SVG의 MIME과 확장자 차단
@@ -135,6 +145,7 @@ flowchart LR
 ```mermaid
 erDiagram
     USERS ||--o{ SPACE_MEMBERS : participates
+    USERS ||--o{ PASSWORD_RESET_TOKENS : requests
     USERS ||--o{ SPACES : owns
     SPACES ||--o{ SPACE_MEMBERS : contains
     SPACES ||--o{ INVITATIONS : issues
@@ -158,14 +169,14 @@ erDiagram
 
 | 그룹 | 테이블 | 핵심 용도 |
 | --- | --- | --- |
-| Identity | `users`, `user_preferences` | 계정과 알림 환경 설정 |
+| Identity | `users`, `password_reset_tokens`, `user_preferences` | 계정, 복구 토큰과 알림 환경 설정 |
 | Space | `spaces`, `space_members`, `invitations` | 테넌트 경계, 역할, 초대 상태 |
 | Calendar | `calendars`, `events`, `event_attendees`, `event_reminders` | 일정 원본과 참석·알림 |
 | Recurrence | `event_occurrence_exceptions`, `event_reminder_deliveries` | 회차 예외와 중복 알림 방지 |
 | Content | `posts`, `post_tags`, `post_attachments`, `post_comments` | 공유글과 자료 |
 | Coupon | `coupons`, `coupon_images` | 쿠폰 상태, 이미지와 선택적 바코드 |
 | Link | `event_resource_links` | 일정과 글·파일·쿠폰 연결 |
-| Operation | `notifications`, `audit_logs` | 사용자 알림과 중요 작업 이력 |
+| Operation | `notifications`, `audit_logs`, `email_outbox` | 사용자 알림, 중요 작업과 메일 전달 이력 |
 
 모든 시간은 DB와 API에서 UTC `Instant`로 저장·전송하고, 화면 표시와 반복 계산에서 IANA 시간대를 적용합니다.
 
@@ -187,7 +198,27 @@ sequenceDiagram
     S-->>U: JWT + 사용자 정보
 ```
 
-### 9.2 공간 초대
+### 9.2 비밀번호 복구
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant A as AuthController
+    participant R as PasswordRecoveryService
+    participant D as Database
+    participant M as EmailOutboxProcessor
+    U->>A: 가입 이메일로 복구 요청
+    A->>R: requestReset
+    R->>D: 사용자 행 잠금·재요청 제한 확인
+    R->>D: 토큰 해시와 Outbox를 한 트랜잭션에 저장
+    M-->>U: 30분 유효 일회용 링크 발송
+    U->>A: 토큰·새 비밀번호 제출
+    A->>R: resetPassword
+    R->>D: 토큰 잠금·단일 사용 확인
+    R->>D: 비밀번호 해시·보안 버전 변경, 토큰 사용 처리
+```
+
+### 9.3 공간 초대
 
 ```mermaid
 sequenceDiagram
@@ -210,7 +241,7 @@ sequenceDiagram
 
 DB에는 원문 토큰이 아닌 SHA-256 해시만 저장합니다. 원문은 생성 응답과 발송 링크에만 사용합니다.
 
-### 9.3 쿠폰 선점
+### 9.4 쿠폰 선점
 
 ```mermaid
 sequenceDiagram
@@ -231,7 +262,7 @@ sequenceDiagram
 
 `CouponRepository.findForUpdate`의 `PESSIMISTIC_WRITE`가 동시 선점의 직렬화 지점입니다.
 
-### 9.4 반복 일정 회차 예외
+### 9.5 반복 일정 회차 예외
 
 일정 원본에는 반복 유형과 종료 시각을 저장합니다. 기간 조회 시 원본 발생 목록을 계산하고 `(event_id, original_starts_at)` 예외를 합성합니다.
 
@@ -239,7 +270,7 @@ sequenceDiagram
 - `CANCELLED`: 해당 회차를 조회 결과에서 제외합니다.
 - 복원: 예외 레코드를 삭제해 원본 반복 회차로 되돌립니다.
 
-### 9.5 주기 작업
+### 9.6 주기 작업
 
 기본 1분 간격으로 다음을 처리합니다.
 
@@ -257,6 +288,7 @@ sequenceDiagram
 | 영역 | 대표 경로 | 설명 |
 | --- | --- | --- |
 | 인증 | `POST /auth/register`, `POST /auth/login` | 가입·로그인 |
+| 계정 복구 | `POST /auth/password-reset/request|confirm`, `PATCH /account/password` | 복구 메일·재설정·로그인 후 변경 |
 | 공간 | `GET/POST /spaces`, `DELETE /spaces/{id}` | 공간 목록·생성·삭제 |
 | 멤버 | `GET/PATCH/DELETE /spaces/{id}/members/...` | 역할·추방 |
 | 초대 | `POST /spaces/{id}/invitations`, `POST /spaces/{id}/invitations/{inviteId}/resend` | 발급·재발송 |
@@ -288,7 +320,7 @@ sequenceDiagram
 }
 ```
 
-주요 상태 코드는 400 입력 오류, 401 인증 실패, 403 권한 없음, 404 격리된 자원, 409 상태 충돌, 410 만료, 422 업무 규칙 위반입니다.
+주요 상태 코드는 400 입력 오류, 401 인증 실패, 403 권한 없음, 404 격리된 자원, 409 상태 충돌, 410 만료, 422 업무 규칙 위반, 429 로그인 임시 잠금입니다.
 
 ## 11. 메일 설계
 
@@ -304,13 +336,13 @@ sequenceDiagram
 - Gmail 앱 비밀번호 사용
 - 연결·읽기·쓰기 시간 제한 기본 10초
 
-`InvitationMailService`는 현재 접속 주소로 만든 수락 링크를 구성하고, `NotificationService`는 활동 대상 상세 링크를 구성합니다. 두 서비스 모두 업무 트랜잭션에서 `email_outbox`에 메시지를 저장합니다. `EmailOutboxProcessor`는 별도 트랜잭션으로 대상을 claim한 후 트랜잭션 밖에서 `MailDeliveryService`를 호출하고 결과를 다시 저장합니다.
+`InvitationMailService`는 현재 접속 주소로 만든 수락 링크를 구성하고, `NotificationService`는 활동 대상 상세 링크를 구성하며, `PasswordRecoveryService`는 고정된 웹 기준 주소로 복구 링크를 만듭니다. 모든 메일은 업무 트랜잭션에서 `email_outbox`에 저장합니다. `EmailOutboxProcessor`는 별도 트랜잭션으로 대상을 claim한 후 트랜잭션 밖에서 `MailDeliveryService`를 호출하고 결과를 다시 저장합니다.
 
 - 상태: `PENDING → PROCESSING → SENT`, 실패 시 `RETRY → DEAD`, 초대 변경 시 `CANCELLED`
 - 기본 처리: 10초 간격, 회당 20건, 최대 5회
 - 재시도: 60초부터 지수형 증가, 최대 1시간
 - 장애 복구: 5분 이상 `PROCESSING`인 작업을 재시도 대기로 복구
-- 민감정보 최소화: 성공·최종 실패·취소 시 본문을 제거해 일회용 초대 토큰을 장기 보관하지 않음
+- 민감정보 최소화: 성공·최종 실패·취소 시 본문을 제거해 초대·복구 토큰을 장기 보관하지 않음
 - 관리자 화면: 공간별 최근 100건의 수신자, 상태, 시도 횟수, 다음 시각과 오류 확인
 - 초대 재발송: 기존 대기 메일을 취소하고 토큰 해시를 새 값으로 교체해 이전 링크를 즉시 무효화
 
@@ -326,7 +358,7 @@ sequenceDiagram
 ### PostgreSQL
 
 - `moaday-postgres` 이름 있는 볼륨
-- Flyway가 시작 시 V1~V13을 순차 적용
+- Flyway가 시작 시 V1~V14를 순차 적용
 - Hibernate는 `ddl-auto=validate`로 엔티티·스키마 일치만 검사
 
 ### 업로드 파일
@@ -353,6 +385,7 @@ sequenceDiagram
 - 역할별 허용·거부와 공간 격리
 - 반복 일정, 회차 예외, ICS UID와 시간대
 - 쿠폰 이미지, 선택적 바코드, 이력과 정정
+- 복구 토큰 단일 사용, 요청 제한, 로그인 잠금과 JWT 보안 버전 무효화
 - 초대 메일 Outbox 구성, 토큰 교체와 재발송
 - Outbox 성공·실패 처리와 지수형 재시도
 

@@ -58,6 +58,13 @@ couponwith:
 
 moaday:
   web-base-url: ${MOADAY_WEB_BASE_URL:http://localhost:3000}
+  security:
+    login:
+      maximum-attempts: ${LOGIN_MAXIMUM_ATTEMPTS:5}
+      lock-seconds: ${LOGIN_LOCK_SECONDS:900}
+    password-reset:
+      expiry-minutes: ${PASSWORD_RESET_EXPIRY_MINUTES:30}
+      request-cooldown-seconds: ${PASSWORD_RESET_COOLDOWN_SECONDS:60}
   mail:
     from: ${MAIL_FROM:no-reply@moaday.local}
     outbox:

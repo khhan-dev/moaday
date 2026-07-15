@@ -6,6 +6,7 @@ import org.springframework.context.support.DefaultMessageSourceResolvable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -36,6 +37,14 @@ public class ApiErrorHandler {
     ResponseEntity<ApiError> handleConstraint(ConstraintViolationException exception, HttpServletRequest request) {
         return ResponseEntity.badRequest().body(new ApiError(
                 "VALIDATION_ERROR", exception.getMessage(), request.getRequestURI(), Instant.now(), Map.of()));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    ResponseEntity<ApiError> handleMalformedJson(HttpMessageNotReadableException exception,
+                                                  HttpServletRequest request) {
+        return ResponseEntity.badRequest().body(new ApiError(
+                "MALFORMED_JSON", "요청 본문의 JSON 형식을 확인해 주세요.",
+                request.getRequestURI(), Instant.now(), Map.of()));
     }
 
     @ExceptionHandler(Exception.class)

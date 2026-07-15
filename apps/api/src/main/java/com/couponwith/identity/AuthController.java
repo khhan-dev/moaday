@@ -15,9 +15,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/auth")
 public class AuthController {
     private final AuthService authService;
+    private final PasswordRecoveryService passwordRecovery;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, PasswordRecoveryService passwordRecovery) {
         this.authService = authService;
+        this.passwordRecovery = passwordRecovery;
     }
 
     @PostMapping("/register")
@@ -31,6 +33,19 @@ public class AuthController {
         return authService.login(request.email(), request.password());
     }
 
+    @PostMapping("/password-reset/request")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    GenericMessage requestPasswordReset(@Valid @RequestBody PasswordResetRequest request) {
+        passwordRecovery.requestReset(request.email());
+        return new GenericMessage("가입된 계정이라면 비밀번호 재설정 메일을 보내드렸습니다.");
+    }
+
+    @PostMapping("/password-reset/confirm")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void resetPassword(@Valid @RequestBody PasswordResetConfirm request) {
+        passwordRecovery.resetPassword(request.token(), request.newPassword());
+    }
+
     record RegisterRequest(
             @Email @NotBlank String email,
             @Size(min = 8, max = 72) String password,
@@ -38,4 +53,7 @@ public class AuthController {
             @NotBlank String timezone) {}
 
     record LoginRequest(@Email @NotBlank String email, @NotBlank String password) {}
+    record PasswordResetRequest(@Email @NotBlank String email) {}
+    record PasswordResetConfirm(@NotBlank String token, @NotBlank @Size(min = 8, max = 72) String newPassword) {}
+    record GenericMessage(String message) {}
 }

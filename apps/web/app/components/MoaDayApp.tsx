@@ -145,9 +145,10 @@ function SearchModal({ session, demo, onClose, onSelect }: { session: AuthResult
 function demoSearch(query:string):SearchResult[]{const values:SearchResult[]=[{type:"EVENT",id:"demo-event",spaceId:"family",spaceName:"우리 가족",title:"엄마 병원 진료",summary:"서울병원",occurredAt:new Date().toISOString(),targetView:"calendar"},{type:"POST",id:"demo-post",spaceId:"family",spaceName:"우리 가족",title:"여름휴가 준비물",summary:"여권, 충전기, 상비약",occurredAt:new Date().toISOString(),targetView:"posts"},{type:"COUPON",id:"demo-coupon",spaceId:"family",spaceName:"우리 가족",title:"아메리카노 쿠폰",summary:"Moa Cafe",occurredAt:new Date().toISOString(),targetView:"coupons"}];return values.filter(item=>`${item.title} ${item.summary}`.includes(query));}
 
 function AuthScreen({ onAuthenticated, onDemo,invitePending }: { onAuthenticated: (result: AuthResult, spaces: Space[]) => void; onDemo: () => void;invitePending:boolean }) {
-  const [mode, setMode] = useState<"login" | "register">("register");
+  const [mode, setMode] = useState<"login" | "register" | "recover">("register");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -162,6 +163,22 @@ function AuthScreen({ onAuthenticated, onDemo,invitePending }: { onAuthenticated
       onAuthenticated(result, loadedSpaces);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "API 서버에 연결하지 못했습니다.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function requestRecovery(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    setMessage("");
+    const form = new FormData(event.currentTarget);
+    try {
+      const result = await api.requestPasswordReset(String(form.get("email")));
+      setMessage(result.message);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "복구 메일을 요청하지 못했습니다.");
     } finally {
       setBusy(false);
     }
@@ -182,19 +199,27 @@ function AuthScreen({ onAuthenticated, onDemo,invitePending }: { onAuthenticated
 
       <section className={styles.authPanel}>
         {invitePending&&<p className={styles.inviteNotice}>초대받은 이메일 계정으로 로그인하거나 회원가입해 주세요.</p>}
-        <p className={styles.eyebrow}>{mode === "register" ? "첫 공간을 시작해 보세요" : "다시 만나서 반가워요"}</p>
-        <h2>{mode === "register" ? "무료로 시작하기" : "로그인"}</h2>
-        <div className={styles.modeTabs} role="tablist" aria-label="인증 방식">
-          <button type="button" role="tab" aria-selected={mode === "register"} onClick={() => setMode("register")}>회원가입</button>
-          <button type="button" role="tab" aria-selected={mode === "login"} onClick={() => setMode("login")}>로그인</button>
-        </div>
-        <form onSubmit={submit} className={styles.form}>
+        <p className={styles.eyebrow}>{mode === "register" ? "첫 공간을 시작해 보세요" : mode === "login" ? "다시 만나서 반가워요" : "안전하게 계정을 복구하세요"}</p>
+        <h2>{mode === "register" ? "무료로 시작하기" : mode === "login" ? "로그인" : "비밀번호 찾기"}</h2>
+        {mode !== "recover" && <div className={styles.modeTabs} role="tablist" aria-label="인증 방식">
+          <button type="button" role="tab" aria-selected={mode === "register"} onClick={() => {setMode("register");setError("");setMessage("")}}>회원가입</button>
+          <button type="button" role="tab" aria-selected={mode === "login"} onClick={() => {setMode("login");setError("");setMessage("")}}>로그인</button>
+        </div>}
+        {mode === "recover" ? <form onSubmit={requestRecovery} className={styles.form}>
+          <p className={styles.authHelp}>가입한 이메일로 30분 동안 유효한 일회용 재설정 링크를 보내드립니다.</p>
+          <label>이메일<input required type="email" name="email" autoComplete="email" placeholder="name@example.com" /></label>
+          {message && <p className={styles.success} role="status">{message}</p>}
+          {error && <p className={styles.error} role="alert">{error}</p>}
+          <button className={styles.primaryButtonLarge} disabled={busy}>{busy ? "요청 중…" : "재설정 메일 받기"}</button>
+          <button type="button" className={styles.textButton} onClick={() => {setMode("login");setError("");setMessage("")}}>로그인으로 돌아가기</button>
+        </form> : <form onSubmit={submit} className={styles.form}>
           {mode === "register" && <label>이름<input required name="displayName" maxLength={40} placeholder="가족과 친구에게 보일 이름" /></label>}
           <label>이메일<input required type="email" name="email" autoComplete="email" placeholder="name@example.com" /></label>
           <label>비밀번호<input required minLength={8} maxLength={72} type="password" name="password" autoComplete={mode === "register" ? "new-password" : "current-password"} placeholder="8자 이상" /></label>
           {error && <p className={styles.error} role="alert">{error}</p>}
           <button className={styles.primaryButtonLarge} disabled={busy}>{busy ? "처리 중…" : mode === "register" ? "내 공간 만들기" : "로그인"}</button>
-        </form>
+          {mode === "login" && <button type="button" className={styles.textButton} onClick={() => {setMode("recover");setError("");setMessage("")}}>비밀번호를 잊으셨나요?</button>}
+        </form>}
         <div className={styles.divider}><span>또는</span></div>
         <button type="button" className={styles.demoButton} onClick={onDemo}>데모 화면 둘러보기</button>
         <p className={styles.terms}>계속하면 서비스 이용약관과 개인정보 처리방침에 동의하게 됩니다.</p>

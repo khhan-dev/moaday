@@ -74,6 +74,8 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
 export const api = {
   register: (input: { email: string; password: string; displayName: string; timezone: string }) => request<AuthResult>("/auth/register", { method: "POST", body: JSON.stringify(input) }),
   login: (input: { email: string; password: string }) => request<AuthResult>("/auth/login", { method: "POST", body: JSON.stringify(input) }),
+  requestPasswordReset: (email: string) => request<{ message: string }>("/auth/password-reset/request", { method: "POST", body: JSON.stringify({ email }) }),
+  resetPassword: (token: string, newPassword: string) => request<void>("/auth/password-reset/confirm", { method: "POST", body: JSON.stringify({ token, newPassword }) }),
   listSpaces: (token: string) => request<Space[]>("/spaces", {}, token),
   createSpace: (token: string, input: { type: SpaceType; name: string; timezone: string; color: string }) => request<Space>("/spaces", { method: "POST", body: JSON.stringify(input) }, token),
   invite: (token: string, spaceId: string, input: { email: string; role: SpaceRole }) => request<Invitation>(`/spaces/${spaceId}/invitations`, { method: "POST", body: JSON.stringify(input) }, token),
@@ -173,6 +175,7 @@ export const api = {
   getPreferences: (token: string) => request<NotificationPreferences>("/preferences", {}, token),
   updatePreferences: (token: string, input: NotificationPreferences) => request<NotificationPreferences>("/preferences", { method: "PATCH", body: JSON.stringify(input) }, token),
   updateProfile: (token: string, input: { displayName: string; timezone: string }) => request<User>("/profile", { method: "PATCH", body: JSON.stringify(input) }, token),
+  changePassword: (token: string, input: { currentPassword: string; newPassword: string }) => request<AuthResult>("/account/password", { method: "PATCH", body: JSON.stringify(input) }, token),
   deleteAccount: (token: string, password: string) => request<void>("/account", { method: "DELETE", body: JSON.stringify({ password }) }, token),
   dashboard: (token: string) => request<DashboardData>("/dashboard", {}, token),
   search: (token: string, query: string) => request<SearchResult[]>(`/search?query=${encodeURIComponent(query)}`, {}, token),

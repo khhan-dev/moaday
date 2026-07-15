@@ -24,7 +24,7 @@ test("server-renders the MoaDay entry experience", async () => {
 });
 
 test("removes starter preview code and ships product metadata", async () => {
-  const [page, layout, packageJson, manifest, app, calendar, shared, coupons, settings, pagination, invitationPage, modalPortal] = await Promise.all([
+  const [page, layout, packageJson, manifest, app, calendar, shared, coupons, settings, pagination, invitationPage, resetPage, modalPortal] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
@@ -36,6 +36,7 @@ test("removes starter preview code and ships product metadata", async () => {
     readFile(new URL("../app/components/SettingsView.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/components/Pagination.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/invite/[token]/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/reset-password/[token]/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/components/ModalPortal.tsx", import.meta.url), "utf8"),
   ]);
 
@@ -90,6 +91,11 @@ test("removes starter preview code and ships product metadata", async () => {
   assert.match(coupons, /기존 바코드가 저장되어 있습니다/);
   assert.match(settings, /앱 내 알림/);
   assert.match(settings, /계정 영구 삭제/);
+  assert.match(settings, /로그인 보안/);
+  assert.match(settings, /기존 로그인 토큰이 모두 만료/);
+  assert.match(app, /비밀번호를 잊으셨나요/);
+  assert.match(resetPage, /새 비밀번호 설정/);
+  assert.match(resetPage, /기존 로그인은 모두 만료/);
   assert.match(pagination, /목록 페이지/);
   assert.match(invitationPage, /\?invite=/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
