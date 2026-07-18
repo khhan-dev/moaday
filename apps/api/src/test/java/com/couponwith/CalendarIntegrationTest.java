@@ -1,5 +1,6 @@
 package com.couponwith;
 
+import com.couponwith.TestAccounts;
 import com.couponwith.calendar.AttendanceStatus;
 import com.couponwith.calendar.CalendarService;
 import com.couponwith.calendar.EventRecurrence;
@@ -23,13 +24,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Transactional
 class CalendarIntegrationTest {
     @Autowired AuthService authService;
+    @Autowired TestAccounts testAccounts;
     @Autowired SpaceService spaceService;
     @Autowired CalendarService calendarService;
 
     @Test
     void recurringEventCrudAttendanceAndReminderFlow() {
-        var owner = authService.register("calendar-owner@example.com", "password123!", "일정 주인", "Asia/Seoul");
-        var member = authService.register("calendar-member@example.com", "password123!", "일정 멤버", "Asia/Seoul");
+        var owner = testAccounts.register("calendar-owner@example.com", "password123!", "일정 주인", "Asia/Seoul");
+        var member = testAccounts.register("calendar-member@example.com", "password123!", "일정 멤버", "Asia/Seoul");
         var family = spaceService.create(owner.user().id(), SpaceType.FAMILY, "일정 가족", "Asia/Seoul", "orange");
         var invitation = spaceService.invite(owner.user().id(), family.id(), member.user().email(), SpaceRole.MEMBER);
         spaceService.accept(member.user().id(), invitation.oneTimeToken());
@@ -64,8 +66,8 @@ class CalendarIntegrationTest {
 
     @Test
     void viewerCanReadAndRespondButCannotCreateEvents() {
-        var owner = authService.register("viewer-owner@example.com", "password123!", "소유자", "Asia/Seoul");
-        var viewer = authService.register("calendar-viewer@example.com", "password123!", "열람자", "Asia/Seoul");
+        var owner = testAccounts.register("viewer-owner@example.com", "password123!", "소유자", "Asia/Seoul");
+        var viewer = testAccounts.register("calendar-viewer@example.com", "password123!", "열람자", "Asia/Seoul");
         var friends = spaceService.create(owner.user().id(), SpaceType.FRIENDS, "친구 일정", "Asia/Seoul", "green");
         var invitation = spaceService.invite(owner.user().id(), friends.id(), viewer.user().email(), SpaceRole.VIEWER);
         spaceService.accept(viewer.user().id(), invitation.oneTimeToken());

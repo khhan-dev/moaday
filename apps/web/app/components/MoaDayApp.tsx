@@ -149,6 +149,7 @@ function AuthScreen({ onAuthenticated, onDemo,invitePending }: { onAuthenticated
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [pendingEmail, setPendingEmail] = useState("");
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -156,11 +157,13 @@ function AuthScreen({ onAuthenticated, onDemo,invitePending }: { onAuthenticated
     setError("");
     const form = new FormData(event.currentTarget);
     try {
-      const result = mode === "register"
-        ? await api.register({ email: String(form.get("email")), password: String(form.get("password")), displayName: String(form.get("displayName")), timezone: "Asia/Seoul" })
-        : await api.login({ email: String(form.get("email")), password: String(form.get("password")) });
-      const loadedSpaces = await api.listSpaces(result.accessToken);
-      onAuthenticated(result, loadedSpaces);
+      if (mode === "register") {
+        const result = await api.register({ email: String(form.get("email")), password: String(form.get("password")), displayName: String(form.get("displayName")), timezone: "Asia/Seoul" });
+        setPendingEmail(result.email); setMessage(result.message);
+      } else {
+        const result = await api.login({ email: String(form.get("email")), password: String(form.get("password")) });
+        onAuthenticated(result, await api.listSpaces(result.accessToken));
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "API 서버에 연결하지 못했습니다.");
     } finally {
@@ -216,6 +219,7 @@ function AuthScreen({ onAuthenticated, onDemo,invitePending }: { onAuthenticated
           {mode === "register" && <label>이름<input required name="displayName" maxLength={40} placeholder="가족과 친구에게 보일 이름" /></label>}
           <label>이메일<input required type="email" name="email" autoComplete="email" placeholder="name@example.com" /></label>
           <label>비밀번호<input required minLength={8} maxLength={72} type="password" name="password" autoComplete={mode === "register" ? "new-password" : "current-password"} placeholder="8자 이상" /></label>
+          {message && mode === "register" && <><p className={styles.success} role="status">{pendingEmail}로 인증 이메일을 보냈습니다. 메일의 인증 버튼을 클릭한 뒤 로그인해 주세요.</p><button type="button" className={styles.textButton} onClick={async()=>{setBusy(true);try{setMessage((await api.resendEmailVerification(pendingEmail)).message)}catch(reason){setError(reason instanceof Error?reason.message:"인증 이메일을 다시 보내지 못했습니다.")}finally{setBusy(false)}}}>인증 이메일 다시 보내기</button></>}
           {error && <p className={styles.error} role="alert">{error}</p>}
           <button className={styles.primaryButtonLarge} disabled={busy}>{busy ? "처리 중…" : mode === "register" ? "내 공간 만들기" : "로그인"}</button>
           {mode === "login" && <button type="button" className={styles.textButton} onClick={() => {setMode("recover");setError("");setMessage("")}}>비밀번호를 잊으셨나요?</button>}

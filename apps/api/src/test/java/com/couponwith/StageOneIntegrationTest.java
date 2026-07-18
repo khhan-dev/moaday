@@ -1,5 +1,6 @@
 package com.couponwith;
 
+import com.couponwith.TestAccounts;
 import com.couponwith.identity.AuthService;
 import com.couponwith.mail.EmailOutboxRepository;
 import com.couponwith.mail.EmailOutboxStatus;
@@ -23,13 +24,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Transactional
 class StageOneIntegrationTest {
     @Autowired AuthService authService;
+    @Autowired TestAccounts testAccounts;
     @Autowired SpaceService spaceService;
     @Autowired InvitationRepository invitationRepository;
     @Autowired EmailOutboxRepository emailOutboxRepository;
 
     @Test
     void registrationCreatesPersonalSpaceAndAllowsFamilySpaceAndInvitation() {
-        var owner = authService.register("owner@example.com", "password123!", "훈", "Asia/Seoul");
+        var owner = testAccounts.register("owner@example.com", "password123!", "훈", "Asia/Seoul");
         var initialSpaces = spaceService.list(owner.user().id());
         assertThat(initialSpaces).singleElement().satisfies(space -> {
             assertThat(space.type()).isEqualTo(SpaceType.PERSONAL);
@@ -53,8 +55,8 @@ class StageOneIntegrationTest {
 
     @Test
     void invitationRequiresMatchingAccountEmail() {
-        var owner = authService.register("a@example.com", "password123!", "A", "Asia/Seoul");
-        var wrongUser = authService.register("wrong@example.com", "password123!", "B", "Asia/Seoul");
+        var owner = testAccounts.register("a@example.com", "password123!", "A", "Asia/Seoul");
+        var wrongUser = testAccounts.register("wrong@example.com", "password123!", "B", "Asia/Seoul");
         var family = spaceService.create(owner.user().id(), SpaceType.FAMILY, "가족", "Asia/Seoul", "orange");
         var invitation = spaceService.invite(owner.user().id(), family.id(), "right@example.com", SpaceRole.MEMBER);
 
@@ -64,8 +66,8 @@ class StageOneIntegrationTest {
 
     @Test
     void ownerCanListChangeAndRemoveMembers() {
-        var owner = authService.register("owner-manage@example.com", "password123!", "소유자", "Asia/Seoul");
-        var member = authService.register("member-manage@example.com", "password123!", "구성원", "Asia/Seoul");
+        var owner = testAccounts.register("owner-manage@example.com", "password123!", "소유자", "Asia/Seoul");
+        var member = testAccounts.register("member-manage@example.com", "password123!", "구성원", "Asia/Seoul");
         var family = spaceService.create(owner.user().id(), SpaceType.FAMILY, "가족", "Asia/Seoul", "orange");
         var invitation = spaceService.invite(owner.user().id(), family.id(), member.user().email(), SpaceRole.MEMBER);
         spaceService.accept(member.user().id(), invitation.oneTimeToken());
@@ -83,8 +85,8 @@ class StageOneIntegrationTest {
 
     @Test
     void memberCannotManageAndOwnerIsProtected() {
-        var owner = authService.register("protected-owner@example.com", "password123!", "소유자", "Asia/Seoul");
-        var member = authService.register("plain-member@example.com", "password123!", "멤버", "Asia/Seoul");
+        var owner = testAccounts.register("protected-owner@example.com", "password123!", "소유자", "Asia/Seoul");
+        var member = testAccounts.register("plain-member@example.com", "password123!", "멤버", "Asia/Seoul");
         var family = spaceService.create(owner.user().id(), SpaceType.FAMILY, "친구들", "Asia/Seoul", "green");
         var invitation = spaceService.invite(owner.user().id(), family.id(), member.user().email(), SpaceRole.MEMBER);
         spaceService.accept(member.user().id(), invitation.oneTimeToken());
@@ -97,7 +99,7 @@ class StageOneIntegrationTest {
 
     @Test
     void invitationsCanBeListedRevokedAndReissuedAfterExpiry() {
-        var owner = authService.register("invite-owner@example.com", "password123!", "소유자", "Asia/Seoul");
+        var owner = testAccounts.register("invite-owner@example.com", "password123!", "소유자", "Asia/Seoul");
         var family = spaceService.create(owner.user().id(), SpaceType.FAMILY, "우리 집", "Asia/Seoul", "orange");
         var pending = spaceService.invite(owner.user().id(), family.id(), "pending@example.com", SpaceRole.MEMBER);
 
@@ -119,8 +121,8 @@ class StageOneIntegrationTest {
 
     @Test
     void registeredUserCanListDeclineAndAcceptReceivedInvitations() {
-        var owner = authService.register("received-owner@example.com", "password123!", "초대자", "Asia/Seoul");
-        var recipient = authService.register("received-member@example.com", "password123!", "수신자", "Asia/Seoul");
+        var owner = testAccounts.register("received-owner@example.com", "password123!", "초대자", "Asia/Seoul");
+        var recipient = testAccounts.register("received-member@example.com", "password123!", "수신자", "Asia/Seoul");
         var family = spaceService.create(owner.user().id(), SpaceType.FAMILY, "초대할 가족", "Asia/Seoul", "orange");
         var invitation = spaceService.invite(owner.user().id(), family.id(), recipient.user().email(), SpaceRole.MEMBER);
 
@@ -144,8 +146,8 @@ class StageOneIntegrationTest {
 
     @Test
     void memberCanLeaveAndOnlyOwnerCanArchiveGroupSpace() {
-        var owner = authService.register("lifecycle-owner@example.com", "password123!", "소유자", "Asia/Seoul");
-        var member = authService.register("lifecycle-member@example.com", "password123!", "멤버", "Asia/Seoul");
+        var owner = testAccounts.register("lifecycle-owner@example.com", "password123!", "소유자", "Asia/Seoul");
+        var member = testAccounts.register("lifecycle-member@example.com", "password123!", "멤버", "Asia/Seoul");
         var family = spaceService.create(owner.user().id(), SpaceType.FAMILY, "정리할 가족", "Asia/Seoul", "orange");
         var invitation = spaceService.invite(owner.user().id(), family.id(), member.user().email(), SpaceRole.MEMBER);
         spaceService.accept(member.user().id(), invitation.oneTimeToken());
@@ -166,8 +168,8 @@ class StageOneIntegrationTest {
 
     @Test
     void pendingInvitationCanBeResentWithANewOneTimeToken() {
-        var owner = authService.register("resend-owner@example.com", "password123!", "소유자", "Asia/Seoul");
-        var recipient = authService.register("resend-member@example.com", "password123!", "수신자", "Asia/Seoul");
+        var owner = testAccounts.register("resend-owner@example.com", "password123!", "소유자", "Asia/Seoul");
+        var recipient = testAccounts.register("resend-member@example.com", "password123!", "수신자", "Asia/Seoul");
         var family = spaceService.create(owner.user().id(), SpaceType.FAMILY, "재발송 가족", "Asia/Seoul", "green");
         var original = spaceService.invite(owner.user().id(), family.id(), recipient.user().email(), SpaceRole.MEMBER,
                 "https://moaday.test");

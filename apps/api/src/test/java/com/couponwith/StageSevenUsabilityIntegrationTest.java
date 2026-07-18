@@ -1,5 +1,6 @@
 package com.couponwith;
 
+import com.couponwith.TestAccounts;
 import com.couponwith.calendar.CalendarService;
 import com.couponwith.calendar.EventRecurrence;
 import com.couponwith.coupon.CouponService;
@@ -24,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Transactional
 class StageSevenUsabilityIntegrationTest {
     @Autowired AuthService auth;
+    @Autowired TestAccounts testAccounts;
     @Autowired SpaceService spaces;
     @Autowired CalendarService calendars;
     @Autowired PostService posts;
@@ -33,8 +35,8 @@ class StageSevenUsabilityIntegrationTest {
     @Test
     void dashboardAndSearchCombineAccessibleSpaces() {
         var suffix = String.valueOf(System.nanoTime());
-        var owner = auth.register("discover-owner-" + suffix + "@example.com", "password123!", "소유자", "Asia/Seoul");
-        var member = auth.register("discover-member-" + suffix + "@example.com", "password123!", "멤버", "Asia/Seoul");
+        var owner = testAccounts.register("discover-owner-" + suffix + "@example.com", "password123!", "소유자", "Asia/Seoul");
+        var member = testAccounts.register("discover-member-" + suffix + "@example.com", "password123!", "멤버", "Asia/Seoul");
         var family = spaces.create(owner.user().id(), SpaceType.FAMILY, "검색 가족", "Asia/Seoul", "green");
         var invitation = spaces.invite(owner.user().id(), family.id(), member.user().email(), SpaceRole.MEMBER);
         spaces.accept(member.user().id(), invitation.oneTimeToken());

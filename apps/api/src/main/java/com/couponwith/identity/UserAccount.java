@@ -40,7 +40,7 @@ public class UserAccount {
         this.passwordHash = passwordHash;
         this.displayName = displayName;
         this.timezone = timezone;
-        this.status = "ACTIVE";
+        this.status = "PENDING_EMAIL_VERIFICATION";
         this.createdAt = Instant.now();
     }
 
@@ -53,6 +53,11 @@ public class UserAccount {
     public int getFailedLoginAttempts() { return failedLoginAttempts; }
     public Instant getLockedUntil() { return lockedUntil; }
     public boolean isActive() { return "ACTIVE".equals(status); }
+    public boolean isPendingEmailVerification() { return "PENDING_EMAIL_VERIFICATION".equals(status); }
+    public void activate() {
+        if (!isPendingEmailVerification()) throw new IllegalStateException("Only pending accounts can be activated");
+        status = "ACTIVE";
+    }
     public boolean isLoginLocked(Instant now) { return lockedUntil != null && now.isBefore(lockedUntil); }
     public void refreshLoginLock(Instant now) {
         if (lockedUntil != null && !now.isBefore(lockedUntil)) {

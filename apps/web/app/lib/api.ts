@@ -2,6 +2,7 @@ export type SpaceType = "PERSONAL" | "FAMILY" | "FRIENDS";
 export type SpaceRole = "OWNER" | "ADMIN" | "MEMBER" | "VIEWER";
 export type User = { id: string; email: string; displayName: string; timezone: string };
 export type AuthResult = { accessToken: string; expiresAt: string; user: User };
+export type RegistrationPending = { email: string; message: string };
 export type Space = { id: string; type: SpaceType; name: string; timezone: string; color: string; role: SpaceRole };
 export type Invitation = { id: string; spaceId: string; email: string; role: SpaceRole; expiresAt: string; oneTimeToken: string; emailQueued: boolean };
 export type SpaceMember = { userId: string; displayName: string; email: string; role: SpaceRole; joinedAt: string; currentUser: boolean };
@@ -72,8 +73,10 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
 }
 
 export const api = {
-  register: (input: { email: string; password: string; displayName: string; timezone: string }) => request<AuthResult>("/auth/register", { method: "POST", body: JSON.stringify(input) }),
+  register: (input: { email: string; password: string; displayName: string; timezone: string }) => request<RegistrationPending>("/auth/register", { method: "POST", body: JSON.stringify(input) }),
   login: (input: { email: string; password: string }) => request<AuthResult>("/auth/login", { method: "POST", body: JSON.stringify(input) }),
+  resendEmailVerification: (email: string) => request<{ message: string }>("/auth/email-verification/resend", { method: "POST", body: JSON.stringify({ email }) }),
+  confirmEmailVerification: (token: string) => request<void>("/auth/email-verification/confirm", { method: "POST", body: JSON.stringify({ token }) }),
   requestPasswordReset: (email: string) => request<{ message: string }>("/auth/password-reset/request", { method: "POST", body: JSON.stringify({ email }) }),
   resetPassword: (token: string, newPassword: string) => request<void>("/auth/password-reset/confirm", { method: "POST", body: JSON.stringify({ token, newPassword }) }),
   listSpaces: (token: string) => request<Space[]>("/spaces", {}, token),

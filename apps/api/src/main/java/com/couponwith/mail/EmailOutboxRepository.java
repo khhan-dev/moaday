@@ -27,4 +27,6 @@ public interface EmailOutboxRepository extends JpaRepository<EmailOutbox, UUID> 
     List<EmailOutbox> findByInvitationIdAndStatusIn(UUID invitationId, Collection<EmailOutboxStatus> statuses);
     List<EmailOutbox> findByPasswordResetTokenIdAndStatusIn(UUID passwordResetTokenId,
                                                              Collection<EmailOutboxStatus> statuses);
+    List<EmailOutbox> findByEmailVerificationTokenIdAndStatusIn(UUID emailVerificationTokenId,
+                                                                  Collection<EmailOutboxStatus> statuses);
 }

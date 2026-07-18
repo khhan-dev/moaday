@@ -1,5 +1,6 @@
 package com.couponwith;
 
+import com.couponwith.TestAccounts;
 import com.couponwith.audit.AuditService;
 import com.couponwith.calendar.CalendarService;
 import com.couponwith.calendar.EventRecurrence;
@@ -29,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Transactional
 class StageTenEventResourceIntegrationTest {
     @Autowired AuthService auth;
+    @Autowired TestAccounts testAccounts;
     @Autowired SpaceService spaces;
     @Autowired CalendarService calendars;
     @Autowired PostService posts;
@@ -90,8 +92,8 @@ class StageTenEventResourceIntegrationTest {
 
     private Group group(String prefix) {
         var suffix = prefix + System.nanoTime();
-        var owner = auth.register(suffix + "-owner@example.com", "password123!", "소유자", "Asia/Seoul");
-        var member = auth.register(suffix + "-member@example.com", "password123!", "멤버", "Asia/Seoul");
+        var owner = testAccounts.register(suffix + "-owner@example.com", "password123!", "소유자", "Asia/Seoul");
+        var member = testAccounts.register(suffix + "-member@example.com", "password123!", "멤버", "Asia/Seoul");
         var space = spaces.create(owner.user().id(), SpaceType.FAMILY, "연결 가족", "Asia/Seoul", "green");
         var invitation = spaces.invite(owner.user().id(), space.id(), member.user().email(), SpaceRole.MEMBER);
         spaces.accept(member.user().id(), invitation.oneTimeToken());

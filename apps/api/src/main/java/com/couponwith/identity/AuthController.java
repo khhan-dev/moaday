@@ -16,44 +16,28 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
     private final AuthService authService;
     private final PasswordRecoveryService passwordRecovery;
+    private final EmailVerificationService emailVerification;
 
-    public AuthController(AuthService authService, PasswordRecoveryService passwordRecovery) {
-        this.authService = authService;
-        this.passwordRecovery = passwordRecovery;
+    public AuthController(AuthService authService, PasswordRecoveryService passwordRecovery, EmailVerificationService emailVerification) {
+        this.authService = authService; this.passwordRecovery = passwordRecovery; this.emailVerification = emailVerification;
     }
+    @PostMapping("/register") @ResponseStatus(HttpStatus.ACCEPTED)
+    AuthService.RegistrationPending register(@Valid @RequestBody RegisterRequest request) { return authService.register(request.email(), request.password(), request.displayName(), request.timezone()); }
+    @PostMapping("/login") AuthService.AuthResult login(@Valid @RequestBody LoginRequest request) { return authService.login(request.email(), request.password()); }
+    @PostMapping("/password-reset/request") @ResponseStatus(HttpStatus.ACCEPTED)
+    GenericMessage requestPasswordReset(@Valid @RequestBody PasswordResetRequest request) { passwordRecovery.requestReset(request.email()); return new GenericMessage("가입된 계정이라면 비밀번호 재설정 메일을 보내드렸습니다."); }
+    @PostMapping("/password-reset/confirm") @ResponseStatus(HttpStatus.NO_CONTENT)
+    void resetPassword(@Valid @RequestBody PasswordResetConfirm request) { passwordRecovery.resetPassword(request.token(), request.newPassword()); }
+    @PostMapping("/email-verification/confirm") @ResponseStatus(HttpStatus.NO_CONTENT)
+    void confirmEmailVerification(@Valid @RequestBody EmailVerificationConfirm request) { emailVerification.confirm(request.token()); }
+    @PostMapping("/email-verification/resend") @ResponseStatus(HttpStatus.ACCEPTED)
+    GenericMessage resendEmailVerification(@Valid @RequestBody EmailVerificationResend request) { emailVerification.resend(request.email()); return new GenericMessage("가입 요청이 있다면 인증 이메일을 보내드렸습니다."); }
 
-    @PostMapping("/register")
-    @ResponseStatus(HttpStatus.CREATED)
-    AuthService.AuthResult register(@Valid @RequestBody RegisterRequest request) {
-        return authService.register(request.email(), request.password(), request.displayName(), request.timezone());
-    }
-
-    @PostMapping("/login")
-    AuthService.AuthResult login(@Valid @RequestBody LoginRequest request) {
-        return authService.login(request.email(), request.password());
-    }
-
-    @PostMapping("/password-reset/request")
-    @ResponseStatus(HttpStatus.ACCEPTED)
-    GenericMessage requestPasswordReset(@Valid @RequestBody PasswordResetRequest request) {
-        passwordRecovery.requestReset(request.email());
-        return new GenericMessage("가입된 계정이라면 비밀번호 재설정 메일을 보내드렸습니다.");
-    }
-
-    @PostMapping("/password-reset/confirm")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    void resetPassword(@Valid @RequestBody PasswordResetConfirm request) {
-        passwordRecovery.resetPassword(request.token(), request.newPassword());
-    }
-
-    record RegisterRequest(
-            @Email @NotBlank String email,
-            @Size(min = 8, max = 72) String password,
-            @NotBlank @Size(max = 40) String displayName,
-            @NotBlank String timezone) {}
-
+    record RegisterRequest(@Email @NotBlank String email, @Size(min = 8, max = 72) String password, @NotBlank @Size(max = 40) String displayName, @NotBlank String timezone) {}
     record LoginRequest(@Email @NotBlank String email, @NotBlank String password) {}
     record PasswordResetRequest(@Email @NotBlank String email) {}
     record PasswordResetConfirm(@NotBlank String token, @NotBlank @Size(min = 8, max = 72) String newPassword) {}
+    record EmailVerificationConfirm(@NotBlank String token) {}
+    record EmailVerificationResend(@Email @NotBlank String email) {}
     record GenericMessage(String message) {}
 }

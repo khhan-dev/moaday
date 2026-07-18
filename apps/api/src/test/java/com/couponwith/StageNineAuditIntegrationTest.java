@@ -1,5 +1,6 @@
 package com.couponwith;
 
+import com.couponwith.TestAccounts;
 import com.couponwith.audit.AuditService;
 import com.couponwith.automation.ScheduledAutomationService;
 import com.couponwith.coupon.CouponRepository;
@@ -27,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Transactional
 class StageNineAuditIntegrationTest {
     @Autowired AuthService auth;
+    @Autowired TestAccounts testAccounts;
     @Autowired SpaceService spaces;
     @Autowired CouponService coupons;
     @Autowired CouponRepository couponRepository;
@@ -67,6 +69,6 @@ class StageNineAuditIntegrationTest {
     }
 
     private CouponService.CouponInput couponInput(){return new CouponService.CouponInput("감사 쿠폰","Moa Cafe",null, Instant.now().plus(3,ChronoUnit.DAYS),"8801234567893","EAN13");}
-    private Group group(String prefix){var suffix=prefix+System.nanoTime();var owner=auth.register(suffix+"-owner@example.com","password123!","소유자","Asia/Seoul");var member=auth.register(suffix+"-member@example.com","password123!","멤버","Asia/Seoul");var space=spaces.create(owner.user().id(),SpaceType.FAMILY,"감사 가족","Asia/Seoul","green");var invitation=spaces.invite(owner.user().id(),space.id(),member.user().email(),SpaceRole.MEMBER);spaces.accept(member.user().id(),invitation.oneTimeToken());return new Group(owner,member,space);}
+    private Group group(String prefix){var suffix=prefix+System.nanoTime();var owner=testAccounts.register(suffix+"-owner@example.com","password123!","소유자","Asia/Seoul");var member=testAccounts.register(suffix+"-member@example.com","password123!","멤버","Asia/Seoul");var space=spaces.create(owner.user().id(),SpaceType.FAMILY,"감사 가족","Asia/Seoul","green");var invitation=spaces.invite(owner.user().id(),space.id(),member.user().email(),SpaceRole.MEMBER);spaces.accept(member.user().id(),invitation.oneTimeToken());return new Group(owner,member,space);}
     private record Group(AuthService.AuthResult owner,AuthService.AuthResult member,SpaceService.SpaceView space){}
 }

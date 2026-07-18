@@ -1,5 +1,6 @@
 package com.couponwith;
 
+import com.couponwith.TestAccounts;
 import com.couponwith.coupon.CouponService;
 import com.couponwith.identity.AuthService;
 import com.couponwith.space.SpaceRole;
@@ -21,14 +22,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Transactional
 class CouponImageIntegrationTest {
     @Autowired AuthService authService;
+    @Autowired TestAccounts testAccounts;
     @Autowired SpaceService spaceService;
     @Autowired CouponService couponService;
 
     @Test
     void storesOriginalCouponImageAndAllowsSpaceMembersToViewIt() throws Exception {
         var suffix = "coupon-image-" + System.nanoTime();
-        var owner = authService.register(suffix + "-owner@example.com", "password123!", "소유자", "Asia/Seoul");
-        var member = authService.register(suffix + "-member@example.com", "password123!", "구성원", "Asia/Seoul");
+        var owner = testAccounts.register(suffix + "-owner@example.com", "password123!", "소유자", "Asia/Seoul");
+        var member = testAccounts.register(suffix + "-member@example.com", "password123!", "구성원", "Asia/Seoul");
         var space = spaceService.create(owner.user().id(), SpaceType.FAMILY, "이미지 가족", "Asia/Seoul", "green");
         var invitation = spaceService.invite(owner.user().id(), space.id(), member.user().email(), SpaceRole.MEMBER);
         spaceService.accept(member.user().id(), invitation.oneTimeToken());
