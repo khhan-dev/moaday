@@ -7,6 +7,9 @@ import com.couponwith.space.SpaceRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
 import java.util.concurrent.CyclicBarrier;
@@ -17,10 +20,14 @@ import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
+@AutoConfigureMockMvc
 class EmailVerificationIntegrationTest {
     @Autowired AuthService auth;
+    @Autowired MockMvc mockMvc;
     @Autowired UserRepository users;
     @Autowired SpaceRepository spaces;
     @Autowired EmailVerificationTokenRepository verificationTokens;
@@ -112,7 +119,7 @@ class EmailVerificationIntegrationTest {
     }
 
     @Test
-    void simultaneousFirstRegistrationsReturnAPendingRegistrationAndADuplicateRegistrationConflict() throws Exception {
+    void simultaneousFirstRegistrationsFollowThePendingRegistrationPathWithoutPersistenceFailure() throws Exception {
         var email = "duplicate-registration-" + System.nanoTime() + "@example.com";
         var start = new CyclicBarrier(2);
         var executor = Executors.newFixedThreadPool(2);
@@ -121,7 +128,7 @@ class EmailVerificationIntegrationTest {
             var second = executor.submit(() -> registerAfter(start, email));
             var outcomes = Stream.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)).toList();
 
-            assertThat(outcomes).containsExactlyInAnyOrder("PENDING", "EMAIL_ALREADY_REGISTERED");
+            assertThat(outcomes).containsExactly("PENDING", "PENDING");
         } finally {
             executor.shutdownNow();
         }
@@ -131,13 +138,46 @@ class EmailVerificationIntegrationTest {
         assertThat(spaces.findAll()).filteredOn(space -> space.getOwnerUserId().equals(user.getId())).isEmpty();
     }
 
+    @Test
+    void duplicatePendingRegistrationViaHttpReturnsAcceptedAndKeepsOnePendingAccountAndToken() throws Exception {
+        var email = "duplicate-http-registration-" + System.nanoTime() + "@example.com";
+        var request = """
+                {"email":"%s","password":"password123!","displayName":"HTTP duplicate","timezone":"Asia/Seoul"}
+                """.formatted(email);
+
+        mockMvc.perform(post("/api/v1/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request))
+                .andExpect(status().isAccepted());
+        mockMvc.perform(post("/api/v1/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request))
+                .andExpect(status().isAccepted());
+
+        var user = users.findByEmailIgnoreCase(email.toUpperCase()).orElseThrow();
+        assertThat(users.findAll()).filteredOn(account -> account.getEmail().equalsIgnoreCase(email)).hasSize(1);
+        assertThat(user.isPendingEmailVerification()).isTrue();
+        assertThat(user.isActive()).isFalse();
+        assertThat(spaces.findAll()).filteredOn(space -> space.getOwnerUserId().equals(user.getId())).isEmpty();
+        assertThat(verificationTokens.findByUserIdAndConsumedAtIsNullAndRevokedAtIsNullOrderByCreatedAtDesc(user.getId()))
+                .hasSize(1);
+    }
+
     private String registerAfter(CyclicBarrier start, String email) throws Exception {
-        start.await();
+        awaitStart(start);
         try {
             auth.register(email, "password123!", "중복 가입", "Asia/Seoul");
             return "PENDING";
         } catch (ApiException exception) {
             return exception.code();
+        }
+    }
+
+    private void awaitStart(CyclicBarrier start) {
+        try {
+            start.await();
+        } catch (Exception exception) {
+            throw new RuntimeException(exception);
         }
     }
 

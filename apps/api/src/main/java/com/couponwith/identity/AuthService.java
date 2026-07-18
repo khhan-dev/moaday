@@ -2,7 +2,6 @@ package com.couponwith.identity;
 
 import com.couponwith.common.ApiException;
 import org.springframework.http.HttpStatus;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
@@ -23,33 +22,20 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtEncoder jwtEncoder;
     private final LoginProtectionService loginProtection;
-    private final EmailVerificationService emailVerification;
+    private final EmailRegistrationService registrations;
 
     public AuthService(UserRepository users, PasswordEncoder passwordEncoder, JwtEncoder jwtEncoder,
-                       LoginProtectionService loginProtection, EmailVerificationService emailVerification) {
+                       LoginProtectionService loginProtection, EmailRegistrationService registrations) {
         this.users = users; this.passwordEncoder = passwordEncoder; this.jwtEncoder = jwtEncoder;
-        this.loginProtection = loginProtection; this.emailVerification = emailVerification;
+        this.loginProtection = loginProtection; this.registrations = registrations;
     }
 
-    @Transactional
     public RegistrationPending register(String rawEmail, String password, String displayName, String timezone) {
         var email = normalizeEmail(rawEmail);
-        var existing = users.findByEmailForUpdate(email).orElse(null);
-        if (existing != null && existing.isActive()) throw new ApiException(HttpStatus.CONFLICT, "EMAIL_ALREADY_REGISTERED", "이미 가입된 이메일입니다.");
-        if (existing != null) {
-            emailVerification.issueFor(existing);
-            return new RegistrationPending(email, "인증 이메일을 확인해 계정을 활성화해 주세요.");
-        }
-        var user = savePendingUser(email, password, displayName, timezone);
-        emailVerification.issueFor(user);
-        return new RegistrationPending(email, "인증 이메일을 확인해 계정을 활성화해 주세요.");
-    }
-
-    private UserAccount savePendingUser(String email, String password, String displayName, String timezone) {
         try {
-            return users.saveAndFlush(new UserAccount(UUID.randomUUID(), email, passwordEncoder.encode(password), displayName.trim(), timezone));
-        } catch (DataIntegrityViolationException exception) {
-            throw new ApiException(HttpStatus.CONFLICT, "EMAIL_ALREADY_REGISTERED", "이미 가입된 이메일입니다.");
+            return registrations.register(email, password, displayName, timezone);
+        } catch (EmailRegistrationConflictException ignored) {
+            return registrations.register(email, password, displayName, timezone);
         }
     }
 
