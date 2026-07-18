@@ -164,20 +164,12 @@ class EmailVerificationIntegrationTest {
     }
 
     private String registerAfter(CyclicBarrier start, String email) throws Exception {
-        awaitStart(start);
+        start.await();
         try {
             auth.register(email, "password123!", "중복 가입", "Asia/Seoul");
             return "PENDING";
         } catch (ApiException exception) {
             return exception.code();
-        }
-    }
-
-    private void awaitStart(CyclicBarrier start) {
-        try {
-            start.await();
-        } catch (Exception exception) {
-            throw new RuntimeException(exception);
         }
     }
 
