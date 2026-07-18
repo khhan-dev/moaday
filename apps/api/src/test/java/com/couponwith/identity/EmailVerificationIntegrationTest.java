@@ -92,10 +92,12 @@ class EmailVerificationIntegrationTest {
             var confirmation = executor.submit(() -> {
                 start.await();
                 try { verification.confirm(rawToken); } catch (RuntimeException ignored) { }
+                return null;
             });
             var resend = executor.submit(() -> {
                 start.await();
                 verification.resend(email);
+                return null;
             });
 
             confirmation.get(10, TimeUnit.SECONDS);
