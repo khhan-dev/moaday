@@ -1,5 +1,6 @@
 package com.couponwith;
 
+import com.couponwith.TestAccounts;
 import com.couponwith.automation.ScheduledAutomationService;
 import com.couponwith.calendar.CalendarService;
 import com.couponwith.calendar.EventRecurrence;
@@ -29,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Transactional
 class StageSixHardeningIntegrationTest {
     @Autowired AuthService auth;
+    @Autowired TestAccounts testAccounts;
     @Autowired SpaceService spaces;
     @Autowired PostService posts;
     @Autowired CouponService coupons;
@@ -115,10 +117,10 @@ class StageSixHardeningIntegrationTest {
 
     private Group group(String prefix) {
         var suffix = prefix + System.nanoTime();
-        var owner = auth.register(suffix + "-owner@example.com", "password123!", "소유자", "Asia/Seoul");
-        var admin = auth.register(suffix + "-admin@example.com", "password123!", "관리자", "Asia/Seoul");
-        var member = auth.register(suffix + "-member@example.com", "password123!", "멤버", "Asia/Seoul");
-        var viewer = auth.register(suffix + "-viewer@example.com", "password123!", "열람자", "Asia/Seoul");
+        var owner = testAccounts.register(suffix + "-owner@example.com", "password123!", "소유자", "Asia/Seoul");
+        var admin = testAccounts.register(suffix + "-admin@example.com", "password123!", "관리자", "Asia/Seoul");
+        var member = testAccounts.register(suffix + "-member@example.com", "password123!", "멤버", "Asia/Seoul");
+        var viewer = testAccounts.register(suffix + "-viewer@example.com", "password123!", "열람자", "Asia/Seoul");
         var space = spaces.create(owner.user().id(), SpaceType.FAMILY, "권한 점검", "Asia/Seoul", "green");
         invite(owner, admin, space, SpaceRole.ADMIN);
         invite(owner, member, space, SpaceRole.MEMBER);

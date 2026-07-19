@@ -34,6 +34,13 @@ public class EmailOutboxService {
         return item.getId();
     }
 
+    @Transactional
+    public UUID enqueueEmailVerification(UUID emailVerificationTokenId, String recipient, String subject, String body) {
+        var item = outbox.save(new EmailOutbox(UUID.randomUUID(), emailVerificationTokenId,
+                "EMAIL_VERIFICATION", recipient.trim(), subject, body, maxAttempts, Instant.now()));
+        return item.getId();
+    }
+
     @Transactional(readOnly = true)
     public List<DeliveryView> list(UUID spaceId) {
         return outbox.findTop100BySpaceIdOrderByCreatedAtDesc(spaceId).stream().map(DeliveryView::from).toList();
@@ -51,6 +58,15 @@ public class EmailOutboxService {
     @Transactional
     public int cancelPasswordResetDeliveries(UUID passwordResetTokenId) {
         var items = outbox.findByPasswordResetTokenIdAndStatusIn(passwordResetTokenId,
+                List.of(EmailOutboxStatus.PENDING, EmailOutboxStatus.RETRY));
+        var now = Instant.now();
+        items.forEach(item -> item.cancel(now));
+        return items.size();
+    }
+
+    @Transactional
+    public int cancelEmailVerificationDeliveries(UUID emailVerificationTokenId) {
+        var items = outbox.findByEmailVerificationTokenIdAndStatusIn(emailVerificationTokenId,
                 List.of(EmailOutboxStatus.PENDING, EmailOutboxStatus.RETRY));
         var now = Instant.now();
         items.forEach(item -> item.cancel(now));

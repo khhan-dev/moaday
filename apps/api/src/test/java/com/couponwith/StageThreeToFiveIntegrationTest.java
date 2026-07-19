@@ -1,5 +1,6 @@
 package com.couponwith;
 
+import com.couponwith.TestAccounts;
 import com.couponwith.coupon.CouponService;
 import com.couponwith.coupon.CouponStatus;
 import com.couponwith.identity.AuthService;
@@ -24,7 +25,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest
 @Transactional
 class StageThreeToFiveIntegrationTest {
-    @Autowired AuthService authService; @Autowired SpaceService spaceService; @Autowired PostService postService;
+    @Autowired AuthService authService;
+    @Autowired TestAccounts testAccounts; @Autowired SpaceService spaceService; @Autowired PostService postService;
     @Autowired CouponService couponService; @Autowired NotificationService notificationService; @Autowired ProfileService profileService;
 
     @Test void postsSupportTagsSearchPinCommentsAndNotifications() {
@@ -52,7 +54,7 @@ class StageThreeToFiveIntegrationTest {
     }
 
     @Test void preferencesProfileAndAccountDeletionWork() {
-        var user=authService.register("settings-user@example.com","password123!","설정 사용자","Asia/Seoul");
+        var user=testAccounts.register("settings-user@example.com","password123!","설정 사용자","Asia/Seoul");
         var preferences=notificationService.updatePreferences(user.user().id(),new NotificationService.PreferenceInput(true,true,false,true,false));
         assertThat(preferences.emailNotifications()).isTrue();assertThat(preferences.couponActivity()).isFalse();
         assertThat(profileService.update(user.user().id(),"변경된 이름","UTC").displayName()).isEqualTo("변경된 이름");
@@ -60,6 +62,6 @@ class StageThreeToFiveIntegrationTest {
         assertThatThrownBy(()->authService.login("settings-user@example.com","password123!")).hasMessageContaining("올바르지 않습니다");
     }
 
-    private Pair pair(String prefix){var suffix=prefix+System.nanoTime();var owner=authService.register(suffix+"-owner@example.com","password123!","소유자","Asia/Seoul");var member=authService.register(suffix+"-member@example.com","password123!","멤버","Asia/Seoul");var space=spaceService.create(owner.user().id(),SpaceType.FAMILY,"공유 가족","Asia/Seoul","green");var invite=spaceService.invite(owner.user().id(),space.id(),member.user().email(),SpaceRole.MEMBER);spaceService.accept(member.user().id(),invite.oneTimeToken());return new Pair(owner,member,space);}
+    private Pair pair(String prefix){var suffix=prefix+System.nanoTime();var owner=testAccounts.register(suffix+"-owner@example.com","password123!","소유자","Asia/Seoul");var member=testAccounts.register(suffix+"-member@example.com","password123!","멤버","Asia/Seoul");var space=spaceService.create(owner.user().id(),SpaceType.FAMILY,"공유 가족","Asia/Seoul","green");var invite=spaceService.invite(owner.user().id(),space.id(),member.user().email(),SpaceRole.MEMBER);spaceService.accept(member.user().id(),invite.oneTimeToken());return new Pair(owner,member,space);}
     private record Pair(AuthService.AuthResult owner,AuthService.AuthResult member,SpaceService.SpaceView space){}
 }

@@ -17,6 +17,7 @@ public class EmailOutbox {
     @Column(name = "space_id") private UUID spaceId;
     @Column(name = "invitation_id") private UUID invitationId;
     @Column(name = "password_reset_token_id") private UUID passwordResetTokenId;
+    @Column(name = "email_verification_token_id") private UUID emailVerificationTokenId;
     @Column(nullable = false, length = 40) private String category;
     @Column(nullable = false, length = 320) private String recipient;
     @Column(nullable = false, length = 255) private String subject;
@@ -35,16 +36,27 @@ public class EmailOutbox {
 
     public EmailOutbox(UUID id, UUID spaceId, UUID invitationId, String category, String recipient,
                        String subject, String body, int maxAttempts, Instant now) {
-        this(id, spaceId, invitationId, null, category, recipient, subject, body, maxAttempts, now);
+        this(id, spaceId, invitationId, null, null, category, recipient, subject, body, maxAttempts, now);
     }
 
     public EmailOutbox(UUID id, UUID spaceId, UUID invitationId, UUID passwordResetTokenId,
                        String category, String recipient, String subject, String body,
                        int maxAttempts, Instant now) {
+        this(id, spaceId, invitationId, passwordResetTokenId, null, category, recipient, subject, body, maxAttempts, now);
+    }
+
+    public EmailOutbox(UUID id, UUID emailVerificationTokenId, String category, String recipient, String subject,
+                       String body, int maxAttempts, Instant now) {
+        this(id, null, null, null, emailVerificationTokenId, category, recipient, subject, body, maxAttempts, now);
+    }
+
+    private EmailOutbox(UUID id, UUID spaceId, UUID invitationId, UUID passwordResetTokenId, UUID emailVerificationTokenId,
+                        String category, String recipient, String subject, String body, int maxAttempts, Instant now) {
         this.id = id;
         this.spaceId = spaceId;
         this.invitationId = invitationId;
         this.passwordResetTokenId = passwordResetTokenId;
+        this.emailVerificationTokenId = emailVerificationTokenId;
         this.category = category;
         this.recipient = recipient;
         this.subject = subject;
@@ -114,6 +126,7 @@ public class EmailOutbox {
     public UUID getSpaceId() { return spaceId; }
     public UUID getInvitationId() { return invitationId; }
     public UUID getPasswordResetTokenId() { return passwordResetTokenId; }
+    public UUID getEmailVerificationTokenId() { return emailVerificationTokenId; }
     public String getCategory() { return category; }
     public String getRecipient() { return recipient; }
     public String getSubject() { return subject; }
